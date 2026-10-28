@@ -64,10 +64,6 @@ var splashStyles = map[int]lipgloss.Style{
 	splashWake:     lipgloss.NewStyle().Foreground(lipgloss.Color("#22505e")),
 }
 
-// splashSkinRamp holds the glyphs of the skin: fine ticks on bright skin,
-// dense marks in the shadow, like the ramp of the ascii-sharks renderer.
-const splashSkinRamp = ":;t%SX8#@"
-
 // splashFishGlyphs cycles through the dashes of the swimming sardines.
 var splashFishGlyphs = []rune{'·', '-', '~', '·', '-', ','}
 
@@ -78,8 +74,7 @@ const splashFishCount = 22
 type splashFish struct {
 	x, y   float64
 	vx, vy float64
-	phase  float64 // the phase of the tail beat
-	glyph  int     // the index of the glyph cycle
+	glyph  int // the index of the glyph cycle
 }
 
 // splashSim carries the animation between two frames.
@@ -130,16 +125,6 @@ func (sim *splashSim) placeIris() {
 	sim.iris = newIrisLogo(width, height)
 	sim.irisX = (sim.width - width) / 2
 	sim.irisY = max(0, (sim.height-height)/2)
-}
-
-// irisBlocks tells whether a place lies in the logo, so the school swims
-// around it.
-func (sim *splashSim) irisBlocks(x, y float64) bool {
-	if sim.iris == nil {
-		return false
-	}
-	return x >= float64(sim.irisX-1) && x <= float64(sim.irisX+sim.iris.width+1) &&
-		y >= float64(sim.irisY-1) && y <= float64(sim.irisY+sim.iris.height+1)
 }
 
 // pushOutOfIris moves a point out of the logo, to the nearest side.

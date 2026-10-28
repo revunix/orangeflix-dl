@@ -31,6 +31,13 @@ linters:
         - fmt.Print
         - fmt.Printf
         - fmt.Println
+    misspell:
+      # The program speaks German: the dictionary is English, so these words
+      # look misspelled to it.
+      ignore-rules:
+        - interaktive
+        - programms
+        - produktions
     staticcheck:
       checks:
         - all
