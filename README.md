@@ -37,52 +37,67 @@ Ein einzelnes Go-Binary für Linux, Windows und macOS mit interaktiver Terminal-
 
 ## Screenshots
 
-Die Bilder stehen in [`docs/screenshots`](docs/screenshots/) und stammen aus der Terminalausgabe mit FiraCode als Schrift. Der Headless-Modus (ohne interaktives Terminal) hat keine eigene Ansicht; er schreibt Fortschritt und Protokoll als Text.
+Die Bilder stehen in [`docs/screenshots`](docs/screenshots/) und stammen aus der Terminalausgabe mit FiraCode als Schrift. Der Headless-Modus (ohne interaktives Terminal) hat keine eigene Ansicht; er schreibt Fortschritt und Protokoll als Text. Ein Klick auf ein Bild öffnet es in voller Größe.
 
-![Das Intro beim Start](docs/screenshots/00-intro-dunkel.png)
-
-Das Intro mit dem Verschlusslogo beim Start.
-
-![Die Anmeldung](docs/screenshots/01-anmeldung-dunkel.png)
-
-Das Anmeldefenster: E-Mail, Passwort, 2FA-Code und die Wahl des Erscheinungsbilds.
-
-![Die Formatenliste](docs/screenshots/02-formate-dunkel.png)
-
-Die Formatenliste; rechts die Angaben zum markierten Eintrag, unten das Protokoll und das Konto.
-
-![Die Episodenliste](docs/screenshots/03-folgen-dunkel.png)
-
-Die Episodenliste des Formats, nach Jahren gruppiert; geladene Folgen tragen das `✓`.
-
-![Das Menü der Folge](docs/screenshots/04-aktion-dunkel.png)
-
-Das Menü beim Klick auf eine Folge: Herunterladen, Mit mpv ansehen, Abbrechen.
-
-![Das Qualitätenfenster](docs/screenshots/05-qualitaet-dunkel.png)
-
-Das Qualitätenfenster ("`i`") mit Auflösung und Dateigröße.
-
-![Das Speicherortfenster](docs/screenshots/06-speicherort-dunkel.png)
-
-Das Speicherortfenster ("`p`") mit dem Pfad und der Ordnerliste wie im Explorer.
-
-![Die Hilfe](docs/screenshots/07-hilfe-dunkel.png)
-
-Das Hilfefenster ("`?`"); die Tasten stehen nach Bildschirm gruppiert, die Gruppe des offenen Bildschirms ist mit „hier" markiert.
-
-![Die Downloadliste](docs/screenshots/08-downloads-dunkel.png)
-
-Die Downloadliste mit Fortschrittsbalken, Restschätzung und dem Protokoll darunter.
-
-![Die Zusammenfassung](docs/screenshots/09-fertig-dunkel.png)
-
-Der Fertig-Bildschirm nach dem Lauf.
-
-![Die Volltextsuche](docs/screenshots/10-suche-dunkel.png)
-
-Die Volltextsuche über Titel und Beschreibungen aller Formate.
-
+<table>
+  <tr>
+    <td width="50%" valign="top">
+      <a href="docs/screenshots/00-intro-dunkel.png"><img src="docs/screenshots/00-intro-dunkel.png" alt="Das Intro beim Start" width="100%"></a><br>
+      <sub><b>Das Intro beim Start</b><br>Das Intro mit dem Verschlusslogo beim Start.</sub>
+    </td>
+    <td width="50%" valign="top">
+      <a href="docs/screenshots/01-anmeldung-dunkel.png"><img src="docs/screenshots/01-anmeldung-dunkel.png" alt="Die Anmeldung" width="100%"></a><br>
+      <sub><b>Die Anmeldung</b><br>Das Anmeldefenster: E-Mail, Passwort, 2FA-Code und die Wahl des Erscheinungsbilds.</sub>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <a href="docs/screenshots/02-formate-dunkel.png"><img src="docs/screenshots/02-formate-dunkel.png" alt="Die Formatenliste" width="100%"></a><br>
+      <sub><b>Die Formatenliste</b><br>Die Formatenliste; rechts die Angaben zum markierten Eintrag, unten das Protokoll und das Konto.</sub>
+    </td>
+    <td width="50%" valign="top">
+      <a href="docs/screenshots/03-folgen-dunkel.png"><img src="docs/screenshots/03-folgen-dunkel.png" alt="Die Episodenliste" width="100%"></a><br>
+      <sub><b>Die Episodenliste</b><br>Die Episodenliste des Formats, nach Jahren gruppiert; geladene Folgen tragen das ✓.</sub>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <a href="docs/screenshots/04-aktion-dunkel.png"><img src="docs/screenshots/04-aktion-dunkel.png" alt="Das Menü der Folge" width="100%"></a><br>
+      <sub><b>Das Menü der Folge</b><br>Das Menü beim Klick auf eine Folge: Herunterladen, Mit mpv ansehen, Abbrechen.</sub>
+    </td>
+    <td width="50%" valign="top">
+      <a href="docs/screenshots/05-qualitaet-dunkel.png"><img src="docs/screenshots/05-qualitaet-dunkel.png" alt="Das Qualitätenfenster" width="100%"></a><br>
+      <sub><b>Das Qualitätenfenster</b><br>Das Qualitätenfenster („i“) mit Auflösung und Dateigröße.</sub>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <a href="docs/screenshots/06-speicherort-dunkel.png"><img src="docs/screenshots/06-speicherort-dunkel.png" alt="Das Speicherortfenster" width="100%"></a><br>
+      <sub><b>Das Speicherortfenster</b><br>Das Speicherortfenster („p“) mit dem Pfad und der Ordnerliste wie im Explorer.</sub>
+    </td>
+    <td width="50%" valign="top">
+      <a href="docs/screenshots/07-hilfe-dunkel.png"><img src="docs/screenshots/07-hilfe-dunkel.png" alt="Die Hilfe" width="100%"></a><br>
+      <sub><b>Die Hilfe</b><br>Das Hilfefenster („?“); die Tasten stehen nach Bildschirm gruppiert, die Gruppe des offenen Bildschirms ist mit „hier“ markiert.</sub>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <a href="docs/screenshots/08-downloads-dunkel.png"><img src="docs/screenshots/08-downloads-dunkel.png" alt="Die Downloadliste" width="100%"></a><br>
+      <sub><b>Die Downloadliste</b><br>Die Downloadliste mit Fortschrittsbalken, Restschätzung und dem Protokoll darunter.</sub>
+    </td>
+    <td width="50%" valign="top">
+      <a href="docs/screenshots/09-fertig-dunkel.png"><img src="docs/screenshots/09-fertig-dunkel.png" alt="Die Zusammenfassung" width="100%"></a><br>
+      <sub><b>Die Zusammenfassung</b><br>Der Fertig-Bildschirm nach dem Lauf.</sub>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <a href="docs/screenshots/10-suche-dunkel.png"><img src="docs/screenshots/10-suche-dunkel.png" alt="Die Volltextsuche" width="100%"></a><br>
+      <sub><b>Die Volltextsuche</b><br>Die Volltextsuche über Titel und Beschreibungen aller Formate.</sub>
+    </td>
+    <td width="50%" valign="top"></td>
+  </tr>
+</table>
 
 ## Installation
 
@@ -215,9 +230,9 @@ Die Oberfläche ist ruhig und modern gehalten: neutrale Flächen, eine Akzentfar
 - **Dünne Rahmen mit runden Ecken**, der Titel steht oben im Rahmen, eine Zahl dahinter gedämpft (`╭─ Formate 52 ───╮`)
 - **Nur die Liste trägt den Akzent**: Ihr Rahmen ist orange, Angaben, Protokoll und Konto treten in einem ruhigen Grau zurück
 - **Die markierte Zeile** hat einen orangen Balken `▌` am Rand und eine warme Fläche über die ganze Breite, in den Listen wie in den Fenstern
-- **Tabellen**: schlanke Spalten für Nummer, Marker (`●` neue Folge, `✓` schon geöffnet), Status, Datum und Zahl; der Titel bekommt den Rest. Die Spaltenköpfe stehen gedämpft, damit die Zeilen vorne stehen; Gruppen (Status, Jahr) haben einen Kopf in der Akzentfarbe mit den Zahlen dahinter
+- **Tabellen**: schlanke Spalten für Nummer, Marker (`●` neue Folge, ✓ schon geöffnet), Status, Datum und Zahl; der Titel bekommt den Rest. Die Spaltenköpfe stehen gedämpft, damit die Zeilen vorne stehen; Gruppen (Status, Jahr) haben einen Kopf in der Akzentfarbe mit den Zahlen dahinter
 - **Angaben** als ruhige Liste aus gedämpftem Bezeichner und Wert, leere Angaben hinterlassen keine Lücke
-- **Downloads** als Karten: Zeichen des Zustands (`●` lädt, `✓` fertig, `✗` fehlgeschlagen) und Titel, rechts Zustand, Prozent, Größe und Restzeit, darunter der Balken über die ganze Breite und der Pfad
+- **Downloads** als Karten: Zeichen des Zustands (`●` lädt, ✓ fertig, `✗` fehlgeschlagen) und Titel, rechts Zustand, Prozent, Größe und Restzeit, darunter der Balken über die ganze Breite und der Pfad
 - **Anmeldung** als schmale Karte in der Mitte, die Bezeichner bündig; das aktive Feld trägt den Akzent
 - **Die Kästen teilen sich die Fläche der Seite**: Sie haben denselben dunklen Hintergrund wie der Rest, nur der Rahmen trennt sie ab. Alle Grautöne sind feste Farben – Terminals kennen keine Deckkraft
 - **Fenster** (Hilfe, Menü der Folge, Qualität, Speicherort) sind randlose Karten mittig über der Seite: eine eigene, gehobene Fläche mit scharfen Kanten aus Halbblöcken und einem schmalen orangen Streifen oben. In der ersten Zeile steht der Titel, rechts gedämpft `esc`; die Tasten stehen nur einmal, in der Fußzeile. Die markierte Zeile hat den orangen Balken und eine warme Fläche, die sich von der Karte abhebt. Über der Seite liegt ein Schleier: Sie bleibt lesbar, aber einfarbig und gedämpft, auch links und rechts neben dem Fenster
