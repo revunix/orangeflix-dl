@@ -396,4 +396,4 @@ Aufbau: `internal/orangeflix` (API-Client, RSS, Formatkatalog), `internal/config
 
 ## Lizenz
 
-MIT - siehe [LICENSE](LICENSE).
+MIT-Lizenz - siehe [LICENSE](LICENSE).
