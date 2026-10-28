@@ -1,0 +1,19 @@
+# Binaries
+/orangeflix-dl
+/orangeflix-dl-*
+
+# Local state
+# Download directories, also those of a run from a package directory
+downloads/
+*.db
+*.db-shm
+*.db-wal
+*.part
+
+# Editor and system files
+.DS_Store
+.idea/
+.vscode/
+
+# Build output
+/dist/
