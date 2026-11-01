@@ -155,7 +155,10 @@ jobs:
           set -euo pipefail
           if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             gh release upload "$TAG" dist/* --clobber --repo "$GITHUB_REPOSITORY"
-            gh release edit "$TAG" --notes-file dist/CHANGELOG.md --repo "$GITHUB_REPOSITORY"
+            # Wird das Tag eines Releases gelöscht und neu gesetzt, macht
+            # GitHub das Release wieder zum Entwurf; es wird hier erneut
+            # veröffentlicht.
+            gh release edit "$TAG" --notes-file dist/CHANGELOG.md --draft=false --repo "$GITHUB_REPOSITORY"
           else
             gh release create "$TAG" dist/* \
               --repo "$GITHUB_REPOSITORY" \
