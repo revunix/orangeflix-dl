@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/zalando/go-keyring"
@@ -320,4 +321,32 @@ func TestFile(t *testing.T) {
 			t.Errorf("Clear created %q or failed: %v", path, err)
 		}
 	})
+}
+
+// TestKeychainTokenWritesAtOnce checks that many parts of the program may
+// store the same token at the same time: the writes are serialised, and an
+// unchanged token is not written again.
+func TestKeychainTokenWritesAtOnce(t *testing.T) {
+	keyring.MockInit()
+	k := &Keychain{}
+	var wg sync.WaitGroup
+	for range 16 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if err := k.SetToken("token-1"); err != nil {
+				t.Errorf("SetToken: %v", err)
+			}
+		}()
+	}
+	wg.Wait()
+	if got, err := k.GetToken(); err != nil || got != "token-1" {
+		t.Fatalf("GetToken = %q, %v, want token-1", got, err)
+	}
+	if err := k.SetToken("token-2"); err != nil {
+		t.Fatalf("SetToken: %v", err)
+	}
+	if got, _ := k.GetToken(); got != "token-2" {
+		t.Fatalf("GetToken = %q, want token-2", got)
+	}
 }

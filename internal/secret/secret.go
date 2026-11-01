@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 
 	"github.com/zalando/go-keyring"
 )
@@ -49,6 +50,9 @@ func Open(credentialsFile string) Store {
 	return keychain
 }
 
+// keychainWrite serialises the writes to the keychain.
+var keychainWrite sync.Mutex
+
 // Keychain uses the operating system keychain (macOS Keychain, Windows
 // Credential Manager, Linux Secret Service).
 type Keychain struct{}
@@ -72,6 +76,8 @@ func (k *Keychain) Get() (string, error) {
 
 // Set stores the password.
 func (k *Keychain) Set(password string) error {
+	keychainWrite.Lock()
+	defer keychainWrite.Unlock()
 	return keyring.Set(keyringService, keyringUser, password)
 }
 
@@ -101,6 +107,23 @@ func (k *Keychain) GetToken() (string, error) {
 
 // SetToken stores the access token.
 func (k *Keychain) SetToken(token string) error {
+	// Several parts of the program ask for the token at the same time, and
+	// every call used to write it again. Two concurrent updates of the same
+	// item make the macOS keychain answer "item already exists" (exit 45), so
+	// the writes are serialised and skipped when nothing changed.
+	keychainWrite.Lock()
+	defer keychainWrite.Unlock()
+	if current, err := keyring.Get(keyringService, keyringToken); err == nil && current == token {
+		return nil
+	}
+	err := keyring.Set(keyringService, keyringToken, token)
+	if err == nil {
+		return nil
+	}
+	// A stale item that the update cannot take over is replaced.
+	if deleteErr := keyring.Delete(keyringService, keyringToken); deleteErr != nil && !errors.Is(deleteErr, keyring.ErrNotFound) {
+		return err
+	}
 	return keyring.Set(keyringService, keyringToken, token)
 }
 
