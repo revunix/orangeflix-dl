@@ -33,7 +33,7 @@ Ein einzelnes Go-Binary für Linux, Windows und macOS mit interaktiver Terminal-
 ## Voraussetzungen
 
 - Eine aktive [Orangeflix-Mitgliedschaft](https://orangeflix.de/)
-- Go 1.26 oder neuer zum Bauen
+- Go 1.26 oder neuer zum Bauen aus dem Quellbaum (mit Homebrew oder den Release-Archiven nicht nötig)
 
 ## Screenshots
 
@@ -101,7 +101,22 @@ Die Bilder stehen in [`docs/screenshots`](docs/screenshots/) und stammen aus der
 
 ## Installation
 
-Aus dem Quellbaum:
+### Homebrew (macOS und Linux)
+
+```bash
+brew tap revunix/orangeflix-dl https://github.com/revunix/orangeflix-dl
+brew install orangeflix-dl
+```
+
+Die Formel installiert das fertige Binary aus dem jeweils neuesten Release für die eigene Plattform (macOS und Linux, Intel und ARM), dazu die Kompletion für bash, zsh und fish und die Manpage. Aktualisieren geht mit `brew upgrade orangeflix-dl`. Zum Ansehen mit `--watch` braucht es [mpv](https://mpv.io/) (`brew install mpv`).
+
+Der Release-Workflow schreibt `Formula/orangeflix-dl.rb` nach jedem neuen Release selbst um (`scripts/update-formula.sh`); die Formel muss nicht von Hand gepflegt werden.
+
+### Release-Archive
+
+Die fertigen Archive für Linux, macOS und Windows stehen bei den [Releases](https://github.com/revunix/orangeflix-dl/releases); `checksums.txt` dient zum Prüfen mit `sha256sum -c checksums.txt`.
+
+### Aus dem Quellbaum
 
 ```bash
 git clone <dieses Repository>
