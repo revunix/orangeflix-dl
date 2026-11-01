@@ -64,6 +64,50 @@ type (
 		Episodes []orangeflix.Episode
 		Err      error
 	}
+	// RecentsMsg carries the recently watched clips.
+	RecentsMsg struct {
+		Episodes []orangeflix.Episode
+		Err      error
+	}
+	// BookmarksMsg carries the bookmarked clips.
+	BookmarksMsg struct {
+		Episodes []orangeflix.Episode
+		Err      error
+	}
+	// BookmarkMsg carries the result of a bookmark toggle.
+	BookmarkMsg struct {
+		Identifier string
+		On         bool
+		Err        error
+	}
+	// CalendarMsg carries the upcoming calendar entries.
+	CalendarMsg struct {
+		Entries []orangeflix.V3CalendarEntry
+		Err     error
+	}
+	// LiveMsg carries the live state.
+	LiveMsg struct {
+		Live *orangeflix.V3LiveInfo
+		Err  error
+	}
+	// PlayLiveMsg carries the result of a live start.
+	PlayLiveMsg struct{ Err error }
+	// SimilarMsg carries the clips similar to an episode.
+	SimilarMsg struct {
+		Source   string
+		Episodes []orangeflix.Episode
+		Err      error
+	}
+	// HostMsg carries the page of a guest.
+	HostMsg struct {
+		Host *orangeflix.V3HostResponse
+		Err  error
+	}
+	// AnnouncementsMsg carries the active announcements.
+	AnnouncementsMsg struct {
+		Items []orangeflix.V3Announcement
+		Err   error
+	}
 	// splashDoneMsg moves on from the start screen.
 	splashDoneMsg struct{}
 	// splashTickMsg is one frame of the intro animation.
@@ -120,6 +164,27 @@ type playbackStatus struct {
 	label    string
 	position int
 	duration int
+}
+
+// clipListKind names the list behind the generic clip screen.
+type clipListKind int
+
+const (
+	clipListRecents clipListKind = iota
+	clipListBookmarks
+	clipListSimilar
+	clipListHost
+)
+
+// clipList is the state of the generic clip screen.
+type clipList struct {
+	kind       clipListKind
+	title      string
+	source     string
+	episodes   []orangeflix.Episode
+	cursor     int
+	scroll     int
+	backScreen Screen
 }
 
 // Model is the state of the interface.
@@ -244,31 +309,60 @@ type Model struct {
 	// playback is the position of the running player, nil when nothing
 	// plays.
 	playback *playbackStatus
-	spinner  spinner.Model
-	summary  summary
-	message  string
-	isError  bool
+	// clipList is the state of the generic clip screen.
+	clipList clipList
+	// calendar is the list of upcoming entries.
+	calendar       []orangeflix.V3CalendarEntry
+	calendarCursor int
+	calendarScroll int
+	// live is the state of the live screen.
+	live        *orangeflix.V3LiveInfo
+	liveLoading bool
+	liveBack    Screen
+	// announcements is the list of active announcements.
+	announcements  []orangeflix.V3Announcement
+	announceCursor int
+	announceScroll int
+	// host is the page of the selected guest.
+	host *orangeflix.V3HostResponse
+	// showParticipants draws the guest picker.
+	showParticipants  bool
+	participantCursor int
+	spinner           spinner.Model
+	summary           summary
+	message           string
+	isError           bool
 	// quitting ends the program.
 	quitting bool
 	exitCode int
 
 	// callbacks.
-	run                func(context.Context) error
-	check              func(context.Context) ([]app.CheckResult, error)
-	downloadNew        func(context.Context, store.FormatEntry) error
-	addFormat          func(context.Context, string) (store.FormatEntry, error)
-	loadEpisodes       func(context.Context, int) ([]orangeflix.Episode, error)
-	clipInfo           func(context.Context, string) ([]orangeflix.File, error)
-	loadFormatsCatalog func(context.Context) ([]orangeflix.Format, error)
-	loadProfileState   func(context.Context) (*app.ProfileSummary, error)
-	runSearchCatalog   func(context.Context, string, int) ([]orangeflix.Episode, error)
-	watchEpisodesFunc  func(context.Context, []orangeflix.Episode) error
-	stopWatch          func()
-	setSelection       func([]string)
-	setCredentials     func(user, password string)
-	setTotp            func(code string)
-	setQuality         func(string)
-	setDownloadsDir    func(string)
+	run                 func(context.Context) error
+	check               func(context.Context) ([]app.CheckResult, error)
+	downloadNew         func(context.Context, store.FormatEntry) error
+	addFormat           func(context.Context, string) (store.FormatEntry, error)
+	loadEpisodes        func(context.Context, int) ([]orangeflix.Episode, error)
+	clipInfo            func(context.Context, string) ([]orangeflix.File, error)
+	loadFormatsCatalog  func(context.Context) ([]orangeflix.Format, error)
+	loadProfileState    func(context.Context) (*app.ProfileSummary, error)
+	runSearchCatalog    func(context.Context, string, int) ([]orangeflix.Episode, error)
+	watchEpisodesFunc   func(context.Context, []orangeflix.Episode) error
+	stopWatch           func()
+	recentsFunc         func(context.Context, int) ([]orangeflix.Episode, error)
+	bookmarksFunc       func(context.Context, int) ([]orangeflix.Episode, error)
+	setBookmarkFunc     func(context.Context, string, bool) error
+	downloadEpisodeFunc func(context.Context, orangeflix.Episode) error
+	calendarFunc        func(context.Context, int) ([]orangeflix.V3CalendarEntry, error)
+	liveFunc            func(context.Context) (*orangeflix.V3LiveInfo, error)
+	playLiveFunc        func(context.Context, *orangeflix.V3LiveInfo, string) error
+	similarFunc         func(context.Context, string, int) ([]orangeflix.Episode, error)
+	hostFunc            func(context.Context, string) (*orangeflix.V3HostResponse, error)
+	announcementsFunc   func(context.Context, string, int) ([]orangeflix.V3Announcement, error)
+	setSelection        func([]string)
+	setCredentials      func(user, password string)
+	setTotp             func(code string)
+	setQuality          func(string)
+	setDownloadsDir     func(string)
 }
 
 // NewModel builds the model of the interface.
@@ -322,40 +416,50 @@ func NewModel(ctx context.Context, opts Options) *Model {
 	path.Width = 48
 
 	model := &Model{
-		ctx:                ctx,
-		config:             opts.Config,
-		store:              opts.Store,
-		version:            opts.Version,
-		theme:              scheme,
-		selected:           map[string]bool{},
-		showLogBox:         true,
-		known:              map[string]store.KnownEpisode{},
-		knownCounts:        map[int]episodeCounts{},
-		clips:              map[string][]orangeflix.File{},
-		spinner:            sp,
-		userInput:          user,
-		passInput:          pass,
-		totpInput:          totp,
-		filterInput:        filter,
-		searchInput:        search,
-		yearInput:          year,
-		pathInput:          path,
-		run:                opts.Run,
-		check:              opts.Check,
-		downloadNew:        opts.DownloadNew,
-		addFormat:          opts.AddFormat,
-		loadEpisodes:       opts.Episodes,
-		clipInfo:           opts.ClipInfo,
-		loadFormatsCatalog: opts.Formats,
-		loadProfileState:   opts.Profile,
-		watchEpisodesFunc:  opts.Watch,
-		stopWatch:          opts.StopWatch,
-		runSearchCatalog:   opts.Search,
-		setSelection:       opts.SetSelection,
-		setQuality:         opts.SetQuality,
-		setDownloadsDir:    opts.SetDownloadsDir,
-		setCredentials:     opts.SetCredentials,
-		setTotp:            opts.SetTotp,
+		ctx:                 ctx,
+		config:              opts.Config,
+		store:               opts.Store,
+		version:             opts.Version,
+		theme:               scheme,
+		selected:            map[string]bool{},
+		showLogBox:          true,
+		known:               map[string]store.KnownEpisode{},
+		knownCounts:         map[int]episodeCounts{},
+		clips:               map[string][]orangeflix.File{},
+		spinner:             sp,
+		userInput:           user,
+		passInput:           pass,
+		totpInput:           totp,
+		filterInput:         filter,
+		searchInput:         search,
+		yearInput:           year,
+		pathInput:           path,
+		run:                 opts.Run,
+		check:               opts.Check,
+		downloadNew:         opts.DownloadNew,
+		addFormat:           opts.AddFormat,
+		loadEpisodes:        opts.Episodes,
+		clipInfo:            opts.ClipInfo,
+		loadFormatsCatalog:  opts.Formats,
+		loadProfileState:    opts.Profile,
+		watchEpisodesFunc:   opts.Watch,
+		stopWatch:           opts.StopWatch,
+		recentsFunc:         opts.Recents,
+		bookmarksFunc:       opts.Bookmarks,
+		setBookmarkFunc:     opts.SetBookmark,
+		downloadEpisodeFunc: opts.DownloadEpisode,
+		calendarFunc:        opts.Calendar,
+		liveFunc:            opts.Live,
+		playLiveFunc:        opts.PlayLive,
+		similarFunc:         opts.Similar,
+		hostFunc:            opts.Host,
+		announcementsFunc:   opts.Announcements,
+		runSearchCatalog:    opts.Search,
+		setSelection:        opts.SetSelection,
+		setQuality:          opts.SetQuality,
+		setDownloadsDir:     opts.SetDownloadsDir,
+		setCredentials:      opts.SetCredentials,
+		setTotp:             opts.SetTotp,
 	}
 	if opts.Config != nil {
 		model.userInput.SetValue(opts.Config.Username)
@@ -385,7 +489,7 @@ func NewModel(ctx context.Context, opts Options) *Model {
 // Init starts the program. Die Daten werden sofort geladen, damit sie
 // fertig da sind, wenn der Startbildschirm vorbei ist.
 func (m *Model) Init() tea.Cmd {
-	return tea.Batch(m.spinner.Tick, m.splashTimer(), m.loadLibrary(), m.loadFormats(), m.loadProfile())
+	return tea.Batch(m.spinner.Tick, m.splashTimer(), m.loadLibrary(), m.loadFormats(), m.loadProfile(), m.loadAnnouncements())
 }
 
 // splashDuration is how long the intro screen runs before it moves on.
@@ -544,6 +648,149 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.clips[message.Identifier] = message.Files
 		return m, nil
+	case RecentsMsg:
+		m.loading = false
+		if message.Err != nil {
+			m.message = message.Err.Error()
+			m.isError = true
+			return m, nil
+		}
+		m.clipList.kind = clipListRecents
+		m.clipList.title = "Weiterschauen"
+		m.clipList.backScreen = ScreenFormats
+		m.clipList.episodes = message.Episodes
+		m.clipList.cursor = 0
+		m.clipList.scroll = 0
+		m.screen = ScreenClips
+		m.message = fmt.Sprintf("%d Folge(n) zuletzt", len(message.Episodes))
+		m.isError = false
+		return m, nil
+	case BookmarksMsg:
+		m.loading = false
+		if message.Err != nil {
+			m.message = message.Err.Error()
+			m.isError = true
+			return m, nil
+		}
+		m.clipList.kind = clipListBookmarks
+		m.clipList.title = "Merkliste"
+		m.clipList.backScreen = ScreenFormats
+		m.clipList.episodes = message.Episodes
+		m.clipList.cursor = 0
+		m.clipList.scroll = 0
+		m.screen = ScreenClips
+		m.message = fmt.Sprintf("%d gemerkte Folge(n)", len(message.Episodes))
+		m.isError = false
+		return m, nil
+	case BookmarkMsg:
+		m.loading = false
+		if message.Err != nil {
+			m.setEpisodeBookmarked(message.Identifier, !message.On)
+			m.message = message.Err.Error()
+			m.isError = true
+			return m, nil
+		}
+		m.setEpisodeBookmarked(message.Identifier, message.On)
+		if m.clipList.kind == clipListBookmarks && !message.On {
+			m.removeClip(message.Identifier)
+		}
+		if message.On {
+			m.message = "Gemerkt."
+		} else {
+			m.message = "Aus der Merkliste entfernt."
+		}
+		m.isError = false
+		return m, nil
+	case CalendarMsg:
+		m.loading = false
+		if message.Err != nil {
+			m.message = message.Err.Error()
+			m.isError = true
+			return m, nil
+		}
+		m.calendar = message.Entries
+		m.calendarCursor = 0
+		m.calendarScroll = 0
+		m.screen = ScreenCalendar
+		m.isError = false
+		return m, nil
+	case LiveMsg:
+		m.loading = false
+		m.liveLoading = false
+		if message.Err != nil {
+			m.message = message.Err.Error()
+			m.isError = true
+			return m, nil
+		}
+		m.live = message.Live
+		m.screen = ScreenLive
+		m.isError = false
+		return m, nil
+	case PlayLiveMsg:
+		m.loading = false
+		if message.Err != nil {
+			m.message = message.Err.Error()
+			m.isError = true
+			return m, nil
+		}
+		m.message = "Wiedergabe läuft in mpv."
+		m.isError = false
+		return m, nil
+	case SimilarMsg:
+		m.loading = false
+		if message.Err != nil {
+			m.message = message.Err.Error()
+			m.isError = true
+			return m, nil
+		}
+		m.clipList.kind = clipListSimilar
+		m.clipList.episodes = message.Episodes
+		m.clipList.title = "Ähnliche Folgen"
+		m.clipList.source = message.Source
+		m.clipList.cursor = 0
+		m.clipList.scroll = 0
+		m.screen = ScreenClips
+		m.isError = false
+		return m, nil
+	case HostMsg:
+		m.loading = false
+		if message.Err != nil {
+			m.message = message.Err.Error()
+			m.isError = true
+			return m, nil
+		}
+		m.host = message.Host
+		m.clipList.kind = clipListHost
+		if message.Host != nil {
+			m.clipList.title = "Gast: " + message.Host.Host.Name
+		}
+		m.clipList.episodes = nil
+		if message.Host != nil {
+			for _, clip := range message.Host.Recents {
+				m.clipList.episodes = append(m.clipList.episodes, clip.Episode())
+			}
+		}
+		m.clipList.cursor = 0
+		m.clipList.scroll = 0
+		m.screen = ScreenClips
+		m.isError = false
+		return m, nil
+	case AnnouncementsMsg:
+		if message.Err != nil {
+			if m.screen == ScreenAnnouncements {
+				m.message = message.Err.Error()
+				m.isError = true
+			}
+			return m, nil
+		}
+		m.announcements = message.Items
+		m.announceCursor = 0
+		m.announceScroll = 0
+		if (m.screen == ScreenFormats || m.screen == ScreenSplash) && m.message == "" && len(message.Items) > 0 {
+			m.message = fmt.Sprintf("%d Ankündigung(en) · ! öffnet sie", len(message.Items))
+		}
+		m.isError = false
+		return m, nil
 	case WatchMsg:
 		m.loading = false
 		if message.Err != nil {
@@ -627,12 +874,19 @@ func (m *Model) updateEpisodeProgress(identifier string, position, duration int6
 	if percent > 100 {
 		percent = 100
 	}
+	found := false
 	for index := range m.episodes {
 		if m.episodes[index].Identifier == identifier {
 			m.episodes[index].ProgressPercent = percent
-			return
+			found = true
 		}
 	}
+	for index := range m.clipList.episodes {
+		if m.clipList.episodes[index].Identifier == identifier {
+			m.clipList.episodes[index].ProgressPercent = percent
+		}
+	}
+	_ = found
 }
 
 // SetSize sets the size of the terminal. It is used by the tests and by the

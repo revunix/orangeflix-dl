@@ -48,6 +48,26 @@ type Options struct {
 	Watch func(context.Context, []orangeflix.Episode) error
 	// StopWatch stops the running playback when the interface closes.
 	StopWatch func()
+	// Recents loads the recently watched clips.
+	Recents func(context.Context, int) ([]orangeflix.Episode, error)
+	// Bookmarks loads the bookmarked clips.
+	Bookmarks func(context.Context, int) ([]orangeflix.Episode, error)
+	// SetBookmark adds or removes a clip from the list.
+	SetBookmark func(context.Context, string, bool) error
+	// DownloadEpisode loads one episode from a clip list.
+	DownloadEpisode func(context.Context, orangeflix.Episode) error
+	// Calendar loads the upcoming calendar entries.
+	Calendar func(context.Context, int) ([]orangeflix.V3CalendarEntry, error)
+	// Live loads the live state.
+	Live func(context.Context) (*orangeflix.V3LiveInfo, error)
+	// PlayLive starts a live stream or replay.
+	PlayLive func(context.Context, *orangeflix.V3LiveInfo, string) error
+	// Similar loads clips related to an episode.
+	Similar func(context.Context, string, int) ([]orangeflix.Episode, error)
+	// Host loads the page of a guest.
+	Host func(context.Context, string) (*orangeflix.V3HostResponse, error)
+	// Announcements loads the active announcements.
+	Announcements func(context.Context, string, int) ([]orangeflix.V3Announcement, error)
 	// SetQuality takes over the quality for the next download.
 	SetQuality func(string)
 	// SetDownloadsDir takes over the folder for the downloads.

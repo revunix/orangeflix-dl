@@ -535,11 +535,10 @@ func (m *Model) episodeLine(episode orangeflix.Episode) string {
 
 // episodeDetail renders the box with the details of the marked episode.
 func (m *Model) episodeDetail(box rect) []string {
-	episodes := m.filteredEpisodes()
-	if len(episodes) == 0 {
+	episode, ok := m.detailEpisode()
+	if !ok {
 		return renderBoxColor(box.width, "Angaben", theme.BoxDetail, nil)
 	}
-	episode := episodes[m.episodeCursor]
 
 	lines := []string{}
 	lines = append(lines, detailRow("Nummer", itoa(int64(episode.Number))))
@@ -552,6 +551,11 @@ func (m *Model) episodeDetail(box rect) []string {
 		lines = append(lines, detailRow("Format", episode.FormatName))
 	}
 	lines = append(lines, detailRow("Status", m.episodeState(episode.Identifier)))
+	bookmark := "nein"
+	if episode.Bookmarked {
+		bookmark = "ja"
+	}
+	lines = append(lines, detailRow("Merkliste", bookmark))
 	if episode.ProgressPercent > 0 && episode.ProgressPercent < 100 {
 		lines = append(lines, detailRow("Gesehen", fmt.Sprintf("%d %%", episode.ProgressPercent)))
 	}
@@ -848,14 +852,10 @@ func (m *Model) episodeState(identifier string) string {
 	if m.episodeLoaded(identifier) {
 		return statusBadge("geladen")
 	}
-	for _, episode := range m.episodes {
-		if episode.Identifier != identifier {
-			continue
-		}
+	if episode, ok := m.detailEpisode(); ok && episode.Identifier == identifier {
 		if episode.ProgressPercent > 0 && episode.ProgressPercent < 100 {
 			return statusBadge(fmt.Sprintf("▶ %d %%", episode.ProgressPercent))
 		}
-		break
 	}
 	if m.episodeNew(identifier) {
 		return statusBadge("neu")
@@ -865,11 +865,11 @@ func (m *Model) episodeState(identifier string) string {
 
 // episodeIdentifier returns the identifier of the marked episode.
 func episodeIdentifier(m *Model) string {
-	episodes := m.filteredEpisodes()
-	if len(episodes) == 0 {
+	episode, ok := m.detailEpisode()
+	if !ok {
 		return ""
 	}
-	return episodes[m.episodeCursor].Identifier
+	return episode.Identifier
 }
 
 // logTime returns the time of a log line.
@@ -881,4 +881,319 @@ func logTime(value time.Time) string {
 // color and the counts behind it in the muted color.
 func groupHeader(name, counts string) string {
 	return theme.AccentBold.Render(name) + "  " + theme.Subtle.Render(counts)
+}
+
+// clipPanel renders the generic clip list.
+func (m *Model) clipPanel(box rect) []string {
+	empty := "Keine Folgen."
+	switch m.clipList.kind {
+	case clipListRecents:
+		empty = "Noch nichts angefangen."
+	case clipListBookmarks:
+		empty = "Keine gemerkten Folgen."
+	case clipListSimilar:
+		empty = "Keine ähnlichen Folgen gefunden."
+	case clipListHost:
+		empty = "Keine Folgen dieses Gasts."
+	}
+	if m.loading && len(m.clipList.episodes) == 0 {
+		return renderBoxColor(box.width, m.clipList.title, theme.BoxList,
+			[]string{theme.Muted.Render(m.spinner.View() + " " + m.loadingLabel)})
+	}
+	if len(m.clipList.episodes) == 0 {
+		return renderBoxColor(box.width, m.clipList.title, theme.BoxList,
+			[]string{theme.Muted.Render(empty)})
+	}
+	budget := box.innerHeight() - 1
+	if budget < 1 {
+		budget = 1
+	}
+	start, end := fitListWindow(&m.clipList.scroll, m.clipList.cursor, budget, len(m.clipList.episodes))
+	content := []string{m.clipHeaderLine(box.innerWidth())}
+	if start > 0 {
+		content = append(content, theme.Muted.Render(fmt.Sprintf("… %d weitere", start)))
+	}
+	for index := start; index < end; index++ {
+		content = append(content, renderRowWidth(m.clipLine(m.clipList.episodes[index]), index == m.clipList.cursor, box.innerWidth()))
+	}
+	if end < len(m.clipList.episodes) {
+		content = append(content, theme.Muted.Render(fmt.Sprintf("… %d weitere", len(m.clipList.episodes)-end)))
+	}
+	return renderBoxAt(box.width, box.height, m.clipList.title, theme.BoxList, trimContent(content, box.innerHeight()))
+}
+
+// clipHeaderLine names the columns of the clip list.
+func (m *Model) clipHeaderLine(width int) string {
+	header := fmt.Sprintf("%-1s %-5s %-22s %-8s %s", "", "STAND", "FORMAT", "LÄNGE", "TITEL")
+	return theme.Subtle.Render(fitToWidth(header, width))
+}
+
+// clipLine renders one row of the clip list.
+func (m *Model) clipLine(episode orangeflix.Episode) string {
+	star := " "
+	if episode.Bookmarked {
+		star = "★"
+	}
+	progress := "—"
+	if episode.ProgressPercent > 0 {
+		progress = fmt.Sprintf("%3d %%", episode.ProgressPercent)
+	}
+	line := theme.Accent.Render(star) + " " +
+		padStyled(theme.Muted, progress, 5) + " " +
+		padStyled(theme.AccentSoft, truncateColumn(episode.FormatName, 22), 22) + " " +
+		padStyled(theme.Muted, episode.Duration, 8) + " " +
+		theme.Text.Render(truncateColumn(episode.Title, 60))
+	return line
+}
+
+// clipDetailPanel renders the detail pane of the clip screen.
+func (m *Model) clipDetailPanel(box rect) []string {
+	if m.clipList.kind == clipListHost {
+		return m.hostDetail(box)
+	}
+	return m.episodeDetail(box)
+}
+
+// hostDetail renders the page of a guest.
+func (m *Model) hostDetail(box rect) []string {
+	if m.host == nil {
+		return renderBoxColor(box.width, "Gast", theme.BoxDetail, nil)
+	}
+	host := m.host.Host
+	lines := []string{detailRow("Name", host.Name)}
+	if host.Description != "" {
+		lines = append(lines, "", theme.Muted.Render("Beschreibung"))
+		lines = append(lines, wrapText(host.Description, box.innerWidth())...)
+	}
+	if len(m.host.Magazines) > 0 {
+		names := make([]string, 0, len(m.host.Magazines))
+		for _, magazine := range m.host.Magazines {
+			names = append(names, magazine.Title)
+		}
+		lines = append(lines, detailRow("Formate", strings.Join(names, ", ")))
+	}
+	if host.ClipCount > 0 {
+		lines = append(lines, detailRow("Folgen", itoa(int64(host.ClipCount))))
+	}
+	return renderBoxAt(box.width, box.height, "Gast", theme.BoxDetail, trimContent(lines, box.innerHeight()))
+}
+
+// calendarRow is one line of the calendar.
+type calendarRow struct {
+	header string
+	entry  *orangeflix.V3CalendarEntry
+}
+
+// calendarPanel renders the calendar grouped by day.
+func (m *Model) calendarPanel(box rect) []string {
+	if m.loading && len(m.calendar) == 0 {
+		return renderBoxColor(box.width, "Kalender", theme.BoxList,
+			[]string{theme.Muted.Render(m.spinner.View() + " " + m.loadingLabel)})
+	}
+	if len(m.calendar) == 0 {
+		return renderBoxColor(box.width, "Kalender", theme.BoxList,
+			[]string{theme.Muted.Render("Keine Termine in der nächsten Zeit.")})
+	}
+	rows := m.calendarRows()
+	budget := box.innerHeight()
+	if budget < 1 {
+		budget = 1
+	}
+	cursorRow := 0
+	for index, row := range rows {
+		if row.entry != nil && m.calendarCursor < len(m.calendar) && row.entry.ID == m.calendar[m.calendarCursor].ID {
+			cursorRow = index
+			break
+		}
+	}
+	start, end := fitListWindow(&m.calendarScroll, cursorRow, budget, len(rows))
+	content := []string{}
+	if start > 0 {
+		content = append(content, theme.Muted.Render(fmt.Sprintf("… %d weitere", start)))
+	}
+	for index := start; index < end; index++ {
+		row := rows[index]
+		if row.entry == nil {
+			content = append(content, groupHeader(row.header, ""))
+			continue
+		}
+		content = append(content, renderRowWidth(m.calendarLine(*row.entry), row.entry.ID == m.calendar[m.calendarCursor].ID, box.innerWidth()))
+	}
+	if end < len(rows) {
+		content = append(content, theme.Muted.Render(fmt.Sprintf("… %d weitere", len(rows)-end)))
+	}
+	return renderBoxAt(box.width, box.height, "Kalender", theme.BoxList, trimContent(content, box.innerHeight()))
+}
+
+// calendarRows groups the entries by their date and sorts each day by time.
+func (m *Model) calendarRows() []calendarRow {
+	type group struct {
+		date  string
+		items []orangeflix.V3CalendarEntry
+	}
+	var groups []group
+	for _, entry := range m.calendar {
+		if len(groups) == 0 || groups[len(groups)-1].date != entry.Date {
+			groups = append(groups, group{date: entry.Date})
+		}
+		groups[len(groups)-1].items = append(groups[len(groups)-1].items, entry)
+	}
+	rows := []calendarRow{}
+	for _, group := range groups {
+		sort.SliceStable(group.items, func(i, j int) bool { return group.items[i].Time < group.items[j].Time })
+		rows = append(rows, calendarRow{header: group.date})
+		for index := range group.items {
+			entry := group.items[index]
+			rows = append(rows, calendarRow{entry: &entry})
+		}
+	}
+	return rows
+}
+
+// calendarLine renders one calendar entry.
+func (m *Model) calendarLine(entry orangeflix.V3CalendarEntry) string {
+	badge := "TERMIN"
+	switch entry.Type {
+	case "live":
+		badge = "LIVE"
+	case "event":
+		badge = "EVENT"
+	}
+	line := padStyled(theme.Muted, entry.Time, 6) + " " +
+		padStyled(theme.Accent, badge, 7) + " " +
+		theme.Text.Render(truncateColumn(entry.Title, 36))
+	if entry.Description != "" {
+		line += " " + theme.Muted.Render(truncateColumn(entry.Description, 30))
+	}
+	return line
+}
+
+// livePanel renders the live state.
+func (m *Model) livePanel(box rect) []string {
+	lines := []string{}
+	if m.liveLoading || (m.live == nil && m.loading) {
+		lines = append(lines, theme.Muted.Render(m.spinner.View()+" Lade den Live-Stand …"))
+		return renderBoxAt(box.width, box.height, "Live", theme.BoxList, trimContent(lines, box.innerHeight()))
+	}
+	if m.live == nil {
+		lines = append(lines, theme.Muted.Render("Keine Live-Angaben."))
+		return renderBoxAt(box.width, box.height, "Live", theme.BoxList, trimContent(lines, box.innerHeight()))
+	}
+	live := m.live
+	if live.Message != "" {
+		lines = append(lines, theme.Warning.Render(live.Message))
+	}
+	if live.IsLive {
+		title := "Livesendung"
+		if live.Show != nil {
+			title = live.Show.Title
+			lines = append(lines, theme.Success.Render("● LIVE  ")+theme.Title.Bold(true).Render(title))
+			lines = append(lines, theme.Muted.Render(fmt.Sprintf("Zeit: %s–%s", formatUnix(live.Show.Begin), formatUnix(live.Show.End))))
+			lines = append(lines, theme.Muted.Render(fmt.Sprintf("Chat: %s · Zugang: %s", yesNo(live.Show.Chat), yesNo(live.HasAccess()))))
+		} else {
+			lines = append(lines, theme.Success.Render("● LIVE  ")+theme.Title.Bold(true).Render(title))
+		}
+		lines = append(lines, "", theme.Accent.Render("[enter] ansehen"))
+	} else {
+		lines = append(lines, theme.Muted.Render("○ Keine Livesendung"))
+	}
+	if live.Replay != nil && live.Replay.Possible {
+		title := live.Replay.Title
+		if title == "" {
+			title = live.Replay.ID
+		}
+		lines = append(lines, "", theme.AccentSoft.Render("↺ Replay  ")+theme.Text.Render(title))
+		if live.Replay.End > 0 {
+			lines = append(lines, theme.Muted.Render("bis "+formatUnix(live.Replay.End)))
+		}
+		if live.Replay.CanAccess {
+			lines = append(lines, theme.Accent.Render("[r] Replay ansehen"))
+		}
+	}
+	if live.Scheduled != nil {
+		lines = append(lines, "", theme.Muted.Render("Nächste Sendung: "+live.Scheduled.Title+" in "+humanDuration(live.Scheduled.StartsIn)))
+	}
+	lines = append(lines, "", theme.Subtle.Render("[R] aktualisieren"))
+	return renderBoxAt(box.width, box.height, "Live", theme.BoxList, trimContent(lines, box.innerHeight()))
+}
+
+// announcementPanel renders the announcements.
+func (m *Model) announcementPanel(box rect) []string {
+	if m.loading && len(m.announcements) == 0 {
+		return renderBoxColor(box.width, "Ankündigungen", theme.BoxList,
+			[]string{theme.Muted.Render(m.spinner.View() + " " + m.loadingLabel)})
+	}
+	if len(m.announcements) == 0 {
+		return renderBoxColor(box.width, "Ankündigungen", theme.BoxList,
+			[]string{theme.Muted.Render("Keine Ankündigungen.")})
+	}
+	budget := box.innerHeight()
+	if budget < 1 {
+		budget = 1
+	}
+	start, end := fitListWindow(&m.announceScroll, m.announceCursor, budget, len(m.announcements))
+	content := []string{}
+	for index := start; index < end; index++ {
+		item := m.announcements[index]
+		line := theme.Muted.Render(fmt.Sprintf("%-7s", strings.ToUpper(item.Type))) + " " +
+			theme.Text.Render(truncateColumn(item.Title, 50))
+		content = append(content, renderRowWidth(line, index == m.announceCursor, box.innerWidth()))
+	}
+	return renderBoxAt(box.width, box.height, "Ankündigungen", theme.BoxList, trimContent(content, box.innerHeight()))
+}
+
+// announcementDetail renders the selected announcement.
+func (m *Model) announcementDetail(box rect) []string {
+	if m.announceCursor < 0 || m.announceCursor >= len(m.announcements) {
+		return renderBoxColor(box.width, "Hinweis", theme.BoxDetail, nil)
+	}
+	item := m.announcements[m.announceCursor]
+	lines := []string{detailRow("Typ", item.Type)}
+	if item.TimeDescription != "" {
+		lines = append(lines, detailRow("Zeit", item.TimeDescription))
+	}
+	text := item.Description
+	if text == "" {
+		text = item.ShortDescription
+	}
+	if text == "" {
+		text = item.BodyMarkdown
+	}
+	if text != "" {
+		lines = append(lines, "", theme.Muted.Render("Text"))
+		lines = append(lines, wrapText(text, box.innerWidth())...)
+	}
+	if item.URL != "" {
+		lines = append(lines, "", detailRow("Link", item.URL))
+	}
+	return renderBoxAt(box.width, box.height, item.Title, theme.BoxDetail, trimContent(lines, box.innerHeight()))
+}
+
+// yesNo formats a boolean for the interface.
+func yesNo(value bool) string {
+	if value {
+		return "ja"
+	}
+	return "nein"
+}
+
+// formatUnix formats a Unix timestamp for the interface.
+func formatUnix(value int64) string {
+	if value <= 0 {
+		return "-"
+	}
+	return time.Unix(value, 0).Local().Format("02.01. 15:04")
+}
+
+// participantPopup asks which guest should be opened.
+func (m *Model) participantPopup(width int) []string {
+	episode, ok := m.currentEpisode()
+	if !ok || len(episode.Participants) == 0 {
+		return windowBoxFootColor(36, "Gast", "", theme.BoxList, []string{theme.Muted.Render("Keine Gäste bekannt.")})
+	}
+	content := []string{theme.Muted.Render("Welcher Gast?"), ""}
+	for index, participant := range episode.Participants {
+		content = append(content, renderWindowRow(theme.Row.Render(participant.Name), index == m.participantCursor, 32))
+	}
+	return windowBoxFootColor(36, "Gast", "", theme.BoxList, content)
 }

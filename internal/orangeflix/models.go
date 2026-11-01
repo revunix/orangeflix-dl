@@ -47,6 +47,8 @@ type Episode struct {
 	ProgressPercent int
 	// HasDownload tells whether the episode can be downloaded.
 	HasDownload bool
+	// Bookmarked tells whether the account has the episode on its list.
+	Bookmarked bool
 }
 
 // Participant is a guest of a format.
@@ -61,15 +63,17 @@ type Participant struct {
 type File struct {
 	// URL is the download URL. It carries a token and is only valid for a
 	// short time, so it is resolved right before the download.
-	URL string
+	URL string `json:"url"`
 	// Desc is the quality description ("HD 1080p", "Audio m4a").
-	Desc string
+	Desc string `json:"desc"`
 	// Size is the file size in bytes.
-	Size int64
+	Size int64 `json:"size"`
 	// Dimensions is the pixel size ("1920x1080").
-	Dimensions string
+	Dimensions string `json:"dimensions"`
 	// Kind is the file type ("film", "music").
-	Kind string
+	Kind string `json:"t"`
+	// File is the server-side file key for the official download endpoint.
+	File string `json:"file"`
 }
 
 // Height returns the vertical resolution of the file in pixels, 0 when the

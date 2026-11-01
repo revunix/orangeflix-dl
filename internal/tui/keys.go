@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -11,6 +12,7 @@ import (
 	"github.com/atotto/clipboard"
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/revunix/orangeflix-dl/internal/app"
 	"github.com/revunix/orangeflix-dl/internal/config"
 	"github.com/revunix/orangeflix-dl/internal/store"
 )
@@ -29,6 +31,9 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 	if m.showAction {
 		return m.handleActionKey(msg)
+	}
+	if m.showParticipants {
+		return m.handleParticipantKey(msg)
 	}
 	if m.showPath {
 		return m.handlePathKey(msg)
@@ -55,6 +60,14 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleSummaryKey(msg)
 	case ScreenSearch:
 		return m.handleSearchKey(msg)
+	case ScreenClips:
+		return m.handleClipListKey(msg)
+	case ScreenCalendar:
+		return m.handleCalendarKey(msg)
+	case ScreenLive:
+		return m.handleLiveKey(msg)
+	case ScreenAnnouncements:
+		return m.handleAnnouncementKey(msg)
 	}
 	return m, nil
 }
@@ -245,6 +258,16 @@ func (m *Model) handleFormatKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.showLogBox = !m.showLogBox
 		m.logOffset = 0
 		return m, nil
+	case "c":
+		return m.openRecents()
+	case "m":
+		return m.openBookmarks()
+	case "K":
+		return m.openCalendar()
+	case "L":
+		return m.openLive()
+	case "!":
+		return m.openAnnouncements()
 	case "a":
 		return m.addCurrentFormat()
 	case "n":
@@ -347,6 +370,12 @@ func (m *Model) handleEpisodeKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.deleteEpisodeFile()
 	case "w":
 		return m.watchEpisodes()
+	case "b":
+		return m.toggleBookmark()
+	case "r":
+		return m.openSimilar()
+	case "h":
+		return m.openHostChoice()
 	case "enter":
 		// Ein Klick auf die Folge öffnet das Menü, das fragt, ob sie
 		// geladen oder angesehen werden soll.
@@ -396,9 +425,15 @@ func (m *Model) handleActionKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.closeActionMenu()
 		switch choice {
 		case actionWatch:
+			if m.screen == ScreenClips {
+				return m.watchCurrentClip()
+			}
 			return m.watchEpisodes()
 		case actionCancel:
 			return m, nil
+		}
+		if m.screen == ScreenClips {
+			return m.downloadCurrentClip()
 		}
 		return m.startDownloadWith(m.actionIdentifiers())
 	case "esc":
@@ -630,6 +665,266 @@ func (m *Model) handleSummaryKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.showHelp = true
 	}
 	return m, nil
+}
+
+// handleClipListKey processes the keys of the generic clip screen.
+func (m *Model) handleClipListKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "up", "k":
+		if m.clipList.cursor > 0 {
+			m.clipList.cursor--
+		}
+	case "down", "j":
+		if m.clipList.cursor < len(m.clipList.episodes)-1 {
+			m.clipList.cursor++
+		}
+	case "pgup":
+		m.clipList.cursor -= 10
+	case "pgdown":
+		m.clipList.cursor += 10
+	case "home":
+		m.clipList.cursor = 0
+	case "end":
+		m.clipList.cursor = len(m.clipList.episodes) - 1
+	case "enter":
+		m.openActionMenu()
+		return m, nil
+	case "w":
+		return m.watchCurrentClip()
+	case "d":
+		return m.downloadCurrentClip()
+	case "b":
+		return m.toggleBookmark()
+	case "i":
+		m.showQuality = true
+		m.qualityCursor = m.currentQualityIndex()
+		return m, m.loadClipInfo()
+	case "p":
+		return m.openPathPopup()
+	case "esc":
+		m.screen = m.clipList.backScreen
+		if m.screen == ScreenSplash || m.screen == ScreenStart {
+			m.screen = ScreenFormats
+		}
+		return m, nil
+	case "?":
+		m.showHelp = true
+		return m, nil
+	case "q":
+		m.quitting = true
+		return m, tea.Quit
+	}
+	if m.clipList.cursor < 0 {
+		m.clipList.cursor = 0
+	}
+	if len(m.clipList.episodes) > 0 && m.clipList.cursor >= len(m.clipList.episodes) {
+		m.clipList.cursor = len(m.clipList.episodes) - 1
+	}
+	return m, nil
+}
+
+// handleParticipantKey picks a guest of the current episode.
+func (m *Model) handleParticipantKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	episode, ok := m.currentEpisode()
+	if !ok {
+		m.showParticipants = false
+		return m, nil
+	}
+	switch msg.String() {
+	case "up", "k":
+		if m.participantCursor > 0 {
+			m.participantCursor--
+		}
+	case "down", "j":
+		if m.participantCursor < len(episode.Participants)-1 {
+			m.participantCursor++
+		}
+	case "enter":
+		if m.participantCursor >= 0 && m.participantCursor < len(episode.Participants) {
+			return m.openHost(episode.Participants[m.participantCursor])
+		}
+	case "esc":
+		m.showParticipants = false
+		return m, nil
+	case "q":
+		m.quitting = true
+		return m, tea.Quit
+	}
+	return m, nil
+}
+
+// handleCalendarKey processes the keys of the calendar.
+func (m *Model) handleCalendarKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "up", "k":
+		if m.calendarCursor > 0 {
+			m.calendarCursor--
+		}
+	case "down", "j":
+		if m.calendarCursor < len(m.calendar)-1 {
+			m.calendarCursor++
+		}
+	case "pgup":
+		m.calendarCursor -= 10
+	case "pgdown":
+		m.calendarCursor += 10
+	case "home":
+		m.calendarCursor = 0
+	case "end":
+		m.calendarCursor = len(m.calendar) - 1
+	case "enter":
+		if m.calendarCursor >= 0 && m.calendarCursor < len(m.calendar) && m.calendar[m.calendarCursor].Type == "live" {
+			m.liveBack = ScreenCalendar
+			m.screen = ScreenLive
+			return m, m.loadLive()
+		}
+	case "o":
+		if m.calendarCursor >= 0 && m.calendarCursor < len(m.calendar) {
+			return m, m.openURL(m.calendar[m.calendarCursor].URL)
+		}
+	case "y":
+		if m.calendarCursor >= 0 && m.calendarCursor < len(m.calendar) {
+			m.copyText(m.calendar[m.calendarCursor].Title)
+		}
+	case "esc":
+		m.screen = ScreenFormats
+		return m, nil
+	case "?":
+		m.showHelp = true
+		return m, nil
+	case "q":
+		m.quitting = true
+		return m, tea.Quit
+	}
+	if m.calendarCursor < 0 {
+		m.calendarCursor = 0
+	}
+	if len(m.calendar) > 0 && m.calendarCursor >= len(m.calendar) {
+		m.calendarCursor = len(m.calendar) - 1
+	}
+	return m, nil
+}
+
+// handleLiveKey processes the keys of the live screen.
+func (m *Model) handleLiveKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "enter", "w":
+		if m.live != nil && m.live.IsLive && m.live.HasAccess() {
+			return m.playLive("live")
+		}
+		if m.live != nil && m.live.Replay != nil && m.live.Replay.Possible && m.live.Replay.CanAccess {
+			return m.playLive("replay")
+		}
+		m.message = "Zurzeit läuft keine Sendung, die abgespielt werden kann."
+		m.isError = true
+	case "r":
+		if m.live != nil && m.live.Replay != nil && m.live.Replay.Possible && m.live.Replay.CanAccess {
+			return m.playLive("replay")
+		}
+		m.message = "Keine Wiederholung verfügbar."
+		m.isError = true
+	case "R":
+		return m, m.loadLive()
+	case "esc":
+		m.screen = m.liveBack
+		if m.screen == ScreenSplash || m.screen == ScreenStart {
+			m.screen = ScreenFormats
+		}
+		return m, nil
+	case "?":
+		m.showHelp = true
+		return m, nil
+	case "q":
+		m.quitting = true
+		return m, tea.Quit
+	}
+	return m, nil
+}
+
+// handleAnnouncementKey processes the keys of the announcements.
+func (m *Model) handleAnnouncementKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "up", "k":
+		if m.announceCursor > 0 {
+			m.announceCursor--
+		}
+	case "down", "j":
+		if m.announceCursor < len(m.announcements)-1 {
+			m.announceCursor++
+		}
+	case "o":
+		if m.announceCursor >= 0 && m.announceCursor < len(m.announcements) {
+			return m, m.openURL(m.announcements[m.announceCursor].URL)
+		}
+	case "esc":
+		m.screen = ScreenFormats
+		return m, nil
+	case "?":
+		m.showHelp = true
+		return m, nil
+	case "q":
+		m.quitting = true
+		return m, tea.Quit
+	}
+	if m.announceCursor < 0 {
+		m.announceCursor = 0
+	}
+	if len(m.announcements) > 0 && m.announceCursor >= len(m.announcements) {
+		m.announceCursor = len(m.announcements) - 1
+	}
+	return m, nil
+}
+
+// openURL opens a link in the browser.
+func (m *Model) openURL(raw string) tea.Cmd {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		m.message = "Kein Link vorhanden."
+		m.isError = true
+		return nil
+	}
+	if strings.HasPrefix(raw, "/") {
+		raw = "https://orangeflix.de" + raw
+	}
+	return func() tea.Msg {
+		if err := openURL(raw); err != nil {
+			return EventMsg{Event: app.Event{Kind: app.EventLog, Message: "Der Link konnte nicht geöffnet werden: " + err.Error()}}
+		}
+		return EventMsg{Event: app.Event{Kind: app.EventLog, Message: "Link geöffnet."}}
+	}
+}
+
+// copyText puts a text into the clipboard.
+func (m *Model) copyText(text string) {
+	if err := clipboardWrite(text); err != nil {
+		m.message = "Der Text konnte nicht kopiert werden: " + err.Error()
+		m.isError = true
+		return
+	}
+	m.message = "Kopiert."
+	m.isError = false
+}
+
+// openURL starts the browser of the system.
+func openURL(raw string) error {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return errors.New("no URL")
+	}
+	var command string
+	var args []string
+	switch runtime.GOOS {
+	case "darwin":
+		command = "open"
+		args = []string{raw}
+	case "windows":
+		command = "rundll32"
+		args = []string{"url.dll,FileProtocolHandler", raw}
+	default:
+		command = "xdg-open"
+		args = []string{raw}
+	}
+	return exec.Command(command, args...).Start()
 }
 
 // copyEpisodeTitle copies the title of the marked episode into the clipboard.

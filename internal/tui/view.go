@@ -46,7 +46,7 @@ func (m *Model) View() string {
 	lines = m.paintRows(lines)
 	// Solange ein Fenster offen ist, liegt ein Schleier über der Seite: sie
 	// bleibt lesbar, das Fenster steht davor.
-	if m.showHelp || m.showQuality || m.showPath || m.showAction {
+	if m.showHelp || m.showQuality || m.showPath || m.showAction || m.showParticipants {
 		for index := range lines {
 			lines[index] = dimText(lines[index])
 		}
@@ -59,6 +59,9 @@ func (m *Model) View() string {
 	}
 	if m.showAction {
 		lines = overlayCentered(lines, m.actionPopup(width), width)
+	}
+	if m.showParticipants {
+		lines = overlayCentered(lines, m.participantPopup(width), width)
 	}
 	if m.showPath {
 		lines = overlayCentered(lines, m.pathPopup(width), width)
@@ -158,6 +161,16 @@ func (m *Model) body(width, height int) []string {
 		screen = place(screen, box, m.searchPanel(box))
 		screen = m.placeLowerBoxes(screen, logBox, info)
 		return m.render(screen, width)
+	case ScreenCalendar:
+		box, logBox, info := m.wideBoxes(width, height)
+		screen = place(screen, box, m.calendarPanel(box))
+		screen = m.placeLowerBoxes(screen, logBox, info)
+		return m.render(screen, width)
+	case ScreenLive:
+		box, logBox, info := m.wideBoxes(width, height)
+		screen = place(screen, box, m.livePanel(box))
+		screen = m.placeLowerBoxes(screen, logBox, info)
+		return m.render(screen, width)
 	}
 
 	// Die Listen und die Angaben stehen im Raster, darunter das Protokoll
@@ -173,6 +186,12 @@ func (m *Model) body(width, height int) []string {
 	case ScreenEpisodes:
 		screen = place(screen, list, m.episodesPanel(list))
 		screen = place(screen, detail, m.episodeDetail(detail))
+	case ScreenClips:
+		screen = place(screen, list, m.clipPanel(list))
+		screen = place(screen, detail, m.clipDetailPanel(detail))
+	case ScreenAnnouncements:
+		screen = place(screen, list, m.announcementPanel(list))
+		screen = place(screen, detail, m.announcementDetail(detail))
 	default:
 		screen = place(screen, list, m.formatsPanel(list))
 		screen = place(screen, detail, m.formatDetail(detail))

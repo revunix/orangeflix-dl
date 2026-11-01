@@ -249,6 +249,36 @@ func Run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 			StopWatch: func() {
 				application.ShutdownPlayback()
 			},
+			Recents: func(ctx context.Context, limit int) ([]orangeflix.Episode, error) {
+				return application.Recents(ctx, limit)
+			},
+			Bookmarks: func(ctx context.Context, limit int) ([]orangeflix.Episode, error) {
+				return application.Bookmarks(ctx, limit)
+			},
+			SetBookmark: func(ctx context.Context, identifier string, on bool) error {
+				return application.SetBookmark(ctx, identifier, on)
+			},
+			DownloadEpisode: func(ctx context.Context, episode orangeflix.Episode) error {
+				return application.DownloadEpisode(ctx, episode)
+			},
+			Calendar: func(ctx context.Context, limit int) ([]orangeflix.V3CalendarEntry, error) {
+				return application.Calendar(ctx, limit)
+			},
+			Live: func(ctx context.Context) (*orangeflix.V3LiveInfo, error) {
+				return application.Live(ctx)
+			},
+			PlayLive: func(ctx context.Context, info *orangeflix.V3LiveInfo, mode string) error {
+				return application.PlayLive(ctx, info, mode)
+			},
+			Similar: func(ctx context.Context, identifier string, limit int) ([]orangeflix.Episode, error) {
+				return application.Similar(ctx, identifier, limit)
+			},
+			Host: func(ctx context.Context, identifier string) (*orangeflix.V3HostResponse, error) {
+				return application.Host(ctx, identifier)
+			},
+			Announcements: func(ctx context.Context, surface string, limit int) ([]orangeflix.V3Announcement, error) {
+				return application.Announcements(ctx, surface, limit)
+			},
 			SetQuality: func(quality string) {
 				application.SetQuality(quality)
 			},

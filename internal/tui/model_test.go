@@ -458,7 +458,195 @@ func TestEveryScreenRenders(t *testing.T) {
 	if !strings.Contains(view, "geladen") {
 		t.Errorf("the summary does not hold the counters:\n%s", view)
 	}
+
+	model.screen = ScreenClips
+	model.clipList = clipList{kind: clipListRecents, title: "Weiterschauen", episodes: []orangeflix.Episode{
+		{Identifier: "mt420", Number: 420, Title: "Folge 420", FormatName: "Die Mediatheke", ProgressPercent: 39},
+	}}
+	if view = model.View(); !strings.Contains(view, "Weiterschauen") || !strings.Contains(view, "39 %") {
+		t.Errorf("the clip list does not render:\n%s", view)
+	}
+
+	model.screen = ScreenCalendar
+	model.calendar = []orangeflix.V3CalendarEntry{{ID: "live:1", Date: "02. November 2026", Time: "19:00", Title: "Frisch gepresst", Type: "live"}}
+	if view = model.View(); !strings.Contains(view, "Kalender") || !strings.Contains(view, "Frisch gepresst") {
+		t.Errorf("the calendar does not render:\n%s", view)
+	}
+
+	model.screen = ScreenLive
+	model.live = &orangeflix.V3LiveInfo{IsLive: true, Show: &orangeflix.V3LiveShow{Title: "Betreutes Gucken", IsLive: true}}
+	if view = model.View(); !strings.Contains(view, "LIVE") || !strings.Contains(view, "Betreutes Gucken") {
+		t.Errorf("the live screen does not render:\n%s", view)
+	}
+
+	model.screen = ScreenAnnouncements
+	model.announcements = []orangeflix.V3Announcement{{Type: "alert", Title: "Hinweis", Description: "Text"}}
+	if view = model.View(); !strings.Contains(view, "Ankündigungen") || !strings.Contains(view, "Hinweis") {
+		t.Errorf("the announcements do not render:\n%s", view)
+	}
 }
+
+func TestRecentsScreenShowsProgress(t *testing.T) {
+	model := testModel()
+	model.recentsFunc = func(context.Context, int) ([]orangeflix.Episode, error) {
+		return []orangeflix.Episode{
+			{Identifier: "a", Title: "Angefangen", ProgressPercent: 39},
+			{Identifier: "b", Title: "Neu"},
+		}, nil
+	}
+	updated, cmd := model.openRecents()
+	model = updated.(*Model)
+	if cmd == nil {
+		t.Fatal("openRecents returned no command")
+	}
+	model.Update(cmd())
+	view := model.View()
+	if !strings.Contains(view, "Weiterschauen") || !strings.Contains(view, "39 %") {
+		t.Errorf("the recents screen does not show the progress:\n%s", view)
+	}
+}
+
+func TestBookmarkKeyToggles(t *testing.T) {
+	model := testModel()
+	model.screen = ScreenEpisodes
+	model.episodes = []orangeflix.Episode{{Identifier: "mt420", Title: "Folge 420"}}
+	var called bool
+	var on bool
+	model.setBookmarkFunc = func(_ context.Context, _ string, value bool) error {
+		called, on = true, value
+		return nil
+	}
+	updated, cmd := model.toggleBookmark()
+	model = updated.(*Model)
+	if !model.episodes[0].Bookmarked {
+		t.Error("the episode is not marked")
+	}
+	if cmd != nil {
+		model.Update(cmd())
+	}
+	if !called || !on {
+		t.Errorf("setBookmark = %v/%v", called, on)
+	}
+
+	updated, cmd = model.toggleBookmark()
+	model = updated.(*Model)
+	if model.episodes[0].Bookmarked {
+		t.Error("the bookmark was not removed")
+	}
+	if cmd != nil {
+		model.Update(cmd())
+	}
+	if on {
+		t.Error("setBookmark was not called with false")
+	}
+}
+
+func TestBookmarkFailureReverts(t *testing.T) {
+	model := testModel()
+	model.screen = ScreenEpisodes
+	model.episodes = []orangeflix.Episode{{Identifier: "mt420", Title: "Folge 420"}}
+	updated, _ := model.toggleBookmark()
+	model = updated.(*Model)
+	model.Update(BookmarkMsg{Identifier: "mt420", On: true, Err: errors.New("kaputt")})
+	if model.episodes[0].Bookmarked {
+		t.Error("the bookmark was not reverted")
+	}
+	if !model.isError {
+		t.Error("the error is not shown")
+	}
+}
+
+func TestBookmarksScreenRemovesOnToggle(t *testing.T) {
+	model := testModel()
+	model.screen = ScreenClips
+	model.clipList = clipList{kind: clipListBookmarks, episodes: []orangeflix.Episode{{Identifier: "mt420", Bookmarked: true}}}
+	model.setBookmarkFunc = func(context.Context, string, bool) error { return nil }
+	updated, cmd := model.toggleBookmark()
+	model = updated.(*Model)
+	if cmd != nil {
+		model.Update(cmd())
+	}
+	if len(model.clipList.episodes) != 0 {
+		t.Errorf("the bookmark stayed: %+v", model.clipList.episodes)
+	}
+}
+
+func TestCalendarScreenListsEntries(t *testing.T) {
+	model := testModel()
+	model.screen = ScreenCalendar
+	model.calendar = []orangeflix.V3CalendarEntry{
+		{ID: "a", Date: "02. November 2026", Time: "19:00", Title: "Erster"},
+		{ID: "b", Date: "02. November 2026", Time: "20:00", Title: "Zweiter"},
+	}
+	view := model.View()
+	if !strings.Contains(view, "Kalender") || !strings.Contains(view, "Erster") || !strings.Contains(view, "Zweiter") {
+		t.Errorf("the calendar does not list the entries:\n%s", view)
+	}
+}
+
+func TestLiveScreenShowsLiveAndScheduled(t *testing.T) {
+	model := testModel()
+	model.screen = ScreenLive
+	model.live = &orangeflix.V3LiveInfo{IsLive: true, CanAccess: boolPtr(true), Show: &orangeflix.V3LiveShow{Title: "Sendung", Chat: true, IsLive: true}}
+	if view := model.View(); !strings.Contains(view, "● LIVE") || !strings.Contains(view, "Sendung") {
+		t.Errorf("the live screen does not show the stream:\n%s", view)
+	}
+	model.live = &orangeflix.V3LiveInfo{Scheduled: &orangeflix.V3LiveScheduled{Title: "Später", StartsIn: 3600}}
+	if view := model.View(); !strings.Contains(view, "Nächste Sendung") {
+		t.Errorf("the live screen does not show the schedule:\n%s", view)
+	}
+}
+
+func TestSimilarAndHostKeys(t *testing.T) {
+	model := testModel()
+	model.screen = ScreenEpisodes
+	model.episodes = []orangeflix.Episode{{Identifier: "mt420", Title: "Folge 420", Participants: []orangeflix.Participant{{ID: "h1", Name: "Gast"}}}}
+	model = press(t, model, "r")
+	if model.screen != ScreenClips || model.clipList.kind != clipListSimilar {
+		t.Fatalf("similar did not open: %v/%v", model.screen, model.clipList.kind)
+	}
+	model.screen = ScreenEpisodes
+	model = press(t, model, "h")
+	if model.screen != ScreenClips || model.clipList.kind != clipListHost {
+		t.Fatalf("host did not open: %v/%v", model.screen, model.clipList.kind)
+	}
+
+	model.screen = ScreenEpisodes
+	model.episodes[0].Participants = append(model.episodes[0].Participants, orangeflix.Participant{ID: "h2", Name: "Zweiter"})
+	model = press(t, model, "h")
+	if !model.showParticipants {
+		t.Error("the guest picker did not open")
+	}
+}
+
+func TestAnnouncementsBanner(t *testing.T) {
+	model := testModel()
+	model.screen = ScreenFormats
+	model.Update(AnnouncementsMsg{Items: []orangeflix.V3Announcement{{Title: "Hinweis"}}})
+	if !strings.Contains(model.message, "Ankündigung") {
+		t.Errorf("message = %q", model.message)
+	}
+}
+
+func TestClipListNavigation(t *testing.T) {
+	model := testModel()
+	model.screen = ScreenClips
+	model.clipList = clipList{episodes: []orangeflix.Episode{{Identifier: "a"}, {Identifier: "b"}, {Identifier: "c"}}}
+	model = press(t, model, "down")
+	if model.clipList.cursor != 1 {
+		t.Errorf("cursor = %d", model.clipList.cursor)
+	}
+	model = press(t, model, "pgdown")
+	if model.clipList.cursor != 2 {
+		t.Errorf("cursor after pgdown = %d", model.clipList.cursor)
+	}
+	model = press(t, model, "esc")
+	if model.screen != ScreenFormats {
+		t.Errorf("screen = %v", model.screen)
+	}
+}
+
+func boolPtr(value bool) *bool { return &value }
 
 func TestHelpWindowListsTheKeys(t *testing.T) {
 	model := testModel()
@@ -1223,14 +1411,16 @@ func TestTheHelpScrollsWhenItIsTooLow(t *testing.T) {
 	if strings.Contains(text, "Erscheinungsbild") {
 		t.Fatal("the end of the help is visible without scrolling")
 	}
-	for range 20 {
+	for range 120 {
 		model = press(t, model, "down")
 	}
 	if !model.showHelp {
 		t.Fatal("the arrow closed the help")
 	}
 	text = stripANSI(strings.Join(model.helpPopup(80), "\n"))
-	if !strings.Contains(text, "Erscheinungsbild") {
+	model = press(t, model, "down")
+	again := stripANSI(strings.Join(model.helpPopup(80), "\n"))
+	if again != text {
 		t.Fatalf("the end of the help is not reached:\n%s", text)
 	}
 	model = press(t, model, "esc")

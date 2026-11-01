@@ -137,7 +137,8 @@ func (a *App) Play(ctx context.Context, episodes []orangeflix.Episode) error {
 		return err
 	}
 	a.logf("Starte %s mit %d Folge(n).", items[0].player.Binary, len(items))
-	a.startPlayback(ctx, items)
+	runner := &playbackRunner{app: a, items: items}
+	a.startRunner(ctx, runner.run)
 	return nil
 }
 
@@ -152,13 +153,14 @@ func (a *App) Watch(ctx context.Context, episodes []orangeflix.Episode) error {
 	return runner.run(ctx)
 }
 
-// startPlayback starts the runner in the background.
-func (a *App) startPlayback(ctx context.Context, items []playbackItem) {
+// startRunner starts one playback runner in the background. VOD and live
+// share the same lifecycle, so StopPlayback and ShutdownPlayback work for
+// both.
+func (a *App) startRunner(ctx context.Context, run func(context.Context) error) {
 	a.StopPlayback()
 
 	playCtx, cancel := context.WithCancel(ctx)
 	done := make(chan struct{})
-	runner := &playbackRunner{app: a, items: items}
 
 	a.playbackMu.Lock()
 	if a.playbackClosed {
@@ -175,7 +177,7 @@ func (a *App) startPlayback(ctx context.Context, items []playbackItem) {
 	go func() {
 		defer close(done)
 		defer cancel()
-		_ = runner.run(playCtx)
+		_ = run(playCtx)
 		a.playbackMu.Lock()
 		if a.playbackID == id {
 			a.playbackCancel = nil

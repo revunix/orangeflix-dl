@@ -150,7 +150,7 @@ func (a *App) episodes(ctx context.Context, format orangeflix.Format) ([]orangef
 func (a *App) episodesPage(ctx context.Context, format orangeflix.Format, page int) ([]orangeflix.Episode, error) {
 	if a.V3 != nil {
 		if err := a.EnsureV3(ctx); err == nil {
-			clips, err := a.V3.Client.Feed(ctx, format.PID, (page-1)*50, 50)
+			clips, err := a.V3.Client.Feed(ctx, orangeflix.V3FeedQuery{MagazineID: format.PID, Offset: (page - 1) * 50, Count: 50, IncludePremium: true, IncludeEarlyAccess: true})
 			if err == nil {
 				episodes := make([]orangeflix.Episode, 0, len(clips))
 				for _, clip := range clips {

@@ -135,10 +135,7 @@ func TestPreparePlaybackResumes(t *testing.T) {
 func TestShutdownRefusesLatePlayback(t *testing.T) {
 	application := &App{}
 	application.ShutdownPlayback()
-	application.startPlayback(context.Background(), []playbackItem{{
-		episode: orangeflix.Episode{Identifier: "mt420"},
-		player:  &player{Binary: "/bin/false"},
-	}})
+	application.startRunner(context.Background(), func(context.Context) error { return nil })
 	application.playbackMu.Lock()
 	defer application.playbackMu.Unlock()
 	if application.playbackDone != nil || application.playbackCancel != nil {

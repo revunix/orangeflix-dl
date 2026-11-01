@@ -88,7 +88,7 @@ func TestV3Magazines(t *testing.T) {
 		]}`))
 	})
 
-	magazines, err := client.Magazines(context.Background())
+	magazines, err := client.Magazines(context.Background(), V3MagazineQuery{})
 	if err != nil {
 		t.Fatalf("Magazines: %v", err)
 	}
@@ -119,7 +119,7 @@ func TestV3Feed(t *testing.T) {
 	})
 	client.AccessToken = "token-1"
 
-	clips, err := client.Feed(context.Background(), 23, 0, 50)
+	clips, err := client.Feed(context.Background(), V3FeedQuery{MagazineID: 23, Count: 50, IncludePremium: true, IncludeEarlyAccess: true})
 	if err != nil {
 		t.Fatalf("Feed: %v", err)
 	}
@@ -257,7 +257,7 @@ func TestV3Unauthorized(t *testing.T) {
 		w.WriteHeader(http.StatusUnauthorized)
 	})
 
-	if _, err := client.Magazines(context.Background()); err != ErrV3Unauthorized {
+	if _, err := client.Magazines(context.Background(), V3MagazineQuery{}); err != ErrV3Unauthorized {
 		t.Fatalf("err = %v, want ErrV3Unauthorized", err)
 	}
 }
@@ -280,7 +280,7 @@ func TestV3RateLimitIsReported(t *testing.T) {
 		_, _ = w.Write([]byte(`{"ok":false,"error":{"code":429,"message":"Rate limit exceeded.","retryAfter":155}}`))
 	})
 
-	_, err := client.Magazines(context.Background())
+	_, err := client.Magazines(context.Background(), V3MagazineQuery{})
 	if err == nil {
 		t.Fatal("want an error for the rate limit")
 	}

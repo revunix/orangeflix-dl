@@ -45,6 +45,12 @@ func (m *Model) actionPopup(width int) []string {
 
 // actionEpisode returns the episode the menu belongs to.
 func (m *Model) actionEpisode() (orangeflix.Episode, bool) {
+	if m.screen == ScreenClips {
+		return m.currentEpisode()
+	}
+	if m.screen != ScreenEpisodes {
+		return orangeflix.Episode{}, false
+	}
 	episodes := m.filteredEpisodes()
 	if len(episodes) == 0 {
 		return orangeflix.Episode{}, false
@@ -75,6 +81,12 @@ func (m *Model) closeActionMenu() {
 // actionIdentifiers returns the episodes the menu works on: the marked
 // ones, otherwise the episode that was picked.
 func (m *Model) actionIdentifiers() []string {
+	if m.screen == ScreenClips {
+		if episode, ok := m.currentEpisode(); ok {
+			return []string{episode.Identifier}
+		}
+		return nil
+	}
 	marked := []string{}
 	for _, episode := range m.filteredEpisodes() {
 		if m.selected[episode.Identifier] {

@@ -32,6 +32,11 @@ func (m *Model) helpEntries() []helpEntry {
 			{"l", "Protokoll ein/aus"},
 			{"s", "Zugangsdaten"},
 			{"p", "Speicherort"},
+			{"c", "Weiterschauen"},
+			{"m", "Merkliste"},
+			{"K", "Kalender"},
+			{"L", "Live"},
+			{"!", "Ankündigungen"},
 		}},
 		{"Folgen", [][2]string{
 			{"enter", "Menü: laden/ansehen"},
@@ -44,9 +49,45 @@ func (m *Model) helpEntries() []helpEntry {
 			{"p", "Speicherort"},
 			{"y", "Titel kopieren"},
 			{"x", "Datei löschen"},
+			{"b", "merken/entfernen"},
+			{"r", "ähnliche Folgen"},
+			{"h", "Gast"},
 		}},
 		{"Suche", [][2]string{
 			{"enter", "suchen"},
+		}},
+		{"Weiterschauen", [][2]string{
+			{"enter", "Menü: laden/ansehen"},
+			{"w", "mit mpv ansehen"},
+			{"d", "laden"},
+			{"b", "merken/entfernen"},
+		}},
+		{"Merkliste", [][2]string{
+			{"enter", "Menü: laden/ansehen"},
+			{"w", "mit mpv ansehen"},
+			{"d", "laden"},
+			{"b", "aus der Merkliste entfernen"},
+		}},
+		{"Kalender", [][2]string{
+			{"enter", "Live-Ansicht"},
+			{"o", "Link öffnen"},
+			{"y", "Titel kopieren"},
+		}},
+		{"Live", [][2]string{
+			{"enter", "Live ansehen"},
+			{"r", "Replay ansehen"},
+			{"R", "neu laden"},
+		}},
+		{"Ankündigungen", [][2]string{
+			{"o", "Link öffnen"},
+		}},
+		{"Ähnliche", [][2]string{
+			{"enter", "Menü: laden/ansehen"},
+			{"w", "mit mpv ansehen"},
+		}},
+		{"Gast", [][2]string{
+			{"enter", "Menü: laden/ansehen"},
+			{"w", "mit mpv ansehen"},
 		}},
 		{"Downloads", [][2]string{
 			{"l", "Protokoll"},
@@ -89,6 +130,24 @@ func (m *Model) helpGroup() string {
 		return "Downloads"
 	case ScreenStart:
 		return "Anmeldung"
+	case ScreenClips:
+		switch m.clipList.kind {
+		case clipListRecents:
+			return "Weiterschauen"
+		case clipListBookmarks:
+			return "Merkliste"
+		case clipListSimilar:
+			return "Ähnliche"
+		case clipListHost:
+			return "Gast"
+		}
+		return "Weiterschauen"
+	case ScreenCalendar:
+		return "Kalender"
+	case ScreenLive:
+		return "Live"
+	case ScreenAnnouncements:
+		return "Ankündigungen"
 	}
 	return "Formate"
 }

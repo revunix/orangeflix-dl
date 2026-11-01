@@ -122,7 +122,7 @@ func (c *V3Client) TokenValid() bool {
 // are limited, so a new one is only created when the old one does not work
 // any more.
 func (c *V3Client) request(ctx context.Context, method, path string, query url.Values, body any, out any) error {
-	err := c.do(ctx, method, path, query, body, out)
+	err := c.do(ctx, c.AccessToken, method, path, query, body, out)
 	if !errors.Is(err, ErrV3Unauthorized) {
 		return err
 	}
@@ -134,11 +134,18 @@ func (c *V3Client) request(ctx context.Context, method, path string, query url.V
 	if _, loginErr := c.Login(ctx); loginErr != nil {
 		return loginErr
 	}
-	return c.do(ctx, method, path, query, body, out)
+	return c.do(ctx, c.AccessToken, method, path, query, body, out)
+}
+
+// requestWithToken sends a request with an explicit token and without the
+// recovery of a rejected token. The session recovery endpoints need the
+// short-lived recovery token instead of the access token.
+func (c *V3Client) requestWithToken(ctx context.Context, token, method, path string, query url.Values, body any, out any) error {
+	return c.do(ctx, token, method, path, query, body, out)
 }
 
 // do sends the request without the recovery of a rejected token.
-func (c *V3Client) do(ctx context.Context, method, path string, query url.Values, body any, out any) error {
+func (c *V3Client) do(ctx context.Context, token, method, path string, query url.Values, body any, out any) error {
 	endpoint, err := url.Parse(c.baseURL() + strings.TrimPrefix(path, "/"))
 	if err != nil {
 		return err
@@ -179,8 +186,8 @@ func (c *V3Client) do(ctx context.Context, method, path string, query url.Values
 		if body != nil {
 			req.Header.Set("Content-Type", "application/json; charset=utf-8")
 		}
-		if c.AccessToken != "" {
-			req.Header.Set("Authorization", "Bearer "+c.AccessToken)
+		if token != "" {
+			req.Header.Set("Authorization", "Bearer "+token)
 		}
 		return req, nil
 	})
@@ -332,6 +339,24 @@ func apiError(body []byte) string {
 	return truncateBody(body)
 }
 
+// V3Subscription is the subscription state of the account.
+type V3Subscription struct {
+	HasAccess              bool   `json:"hasAccess"`
+	LZK                    int64  `json:"lzk"`
+	Lifetime               bool   `json:"lifetime"`
+	ActiveSub              int    `json:"activeSub"`
+	CaptureAmount          int    `json:"captureAmount"`
+	ComputedCaptureAmount  int    `json:"computedCaptureAmount"`
+	NextCapture            int64  `json:"nextCapture"`
+	LZKFormatted           string `json:"lzkFormatted"`
+	ActiveSubDesc          string `json:"activeSubDesc"`
+	CaptureAmountFormatted string `json:"captureAmountFormatted"`
+	Tier                   int    `json:"tier"`
+	NextCaptureFormatted   string `json:"nextCaptureFormatted"`
+	AccessType             string `json:"accessType"`
+	ExpiresAt              int64  `json:"expiresAt"`
+}
+
 // V3Profile is the account of the user.
 type V3Profile struct {
 	OK   bool `json:"ok"`
@@ -342,18 +367,8 @@ type V3Profile struct {
 		LastLogin  int64  `json:"lastLogin"`
 		FeedSeenAt any    `json:"feedSeenAt"`
 	} `json:"user"`
-	Subscription struct {
-		HasAccess             bool   `json:"hasAccess"`
-		AccessType            string `json:"accessType"`
-		Tier                  int    `json:"tier"`
-		ExpiresAt             int64  `json:"expiresAt"`
-		ExpiresAtFormatted    string `json:"lzkFormatted"`
-		Lifetime              bool   `json:"lifetime"`
-		ActiveSubDescription  string `json:"activeSubDesc"`
-		CaptureAmount         string `json:"captureAmountFormatted"`
-		ComputedCaptureAmount int    `json:"computedCaptureAmount"`
-	} `json:"subscription"`
-	Features struct {
+	Subscription V3Subscription `json:"subscription"`
+	Features     struct {
 		HasTotp bool `json:"hasTotp"`
 	} `json:"features"`
 }
@@ -399,11 +414,28 @@ type v3MagazinesResponse struct {
 	Magazines []V3Magazine `json:"magazines"`
 }
 
+// V3MagazineQuery filters the catalog. Zero values mean "no filter".
+type V3MagazineQuery struct {
+	Active *bool
+	IDs    []int
+}
+
 // Magazines returns the catalog of the formats. The endpoint needs no
 // token.
-func (c *V3Client) Magazines(ctx context.Context) ([]V3Magazine, error) {
+func (c *V3Client) Magazines(ctx context.Context, query V3MagazineQuery) ([]V3Magazine, error) {
+	values := url.Values{}
+	if query.Active != nil {
+		values.Set("active", strconv.FormatBool(*query.Active))
+	}
+	if len(query.IDs) > 0 {
+		ids := make([]string, 0, len(query.IDs))
+		for _, pid := range query.IDs {
+			ids = append(ids, strconv.Itoa(pid))
+		}
+		values.Set("magazineIds", strings.Join(ids, ","))
+	}
 	var answer v3MagazinesResponse
-	if err := c.request(ctx, http.MethodGet, "content/magazines", nil, nil, &answer); err != nil {
+	if err := c.request(ctx, http.MethodGet, "content/magazines", values, nil, &answer); err != nil {
 		return nil, err
 	}
 	return answer.Magazines, nil
@@ -431,6 +463,7 @@ func (c V3Clip) Episode() Episode {
 		CategoryTitle:   c.CategoryTitle,
 		ProgressPercent: c.Progress.Percentage,
 		HasDownload:     c.HasDownload,
+		Bookmarked:      c.IsBookmarked,
 		Thumb:           c.Image,
 	}
 	if episode.Thumb == "" {
@@ -490,18 +523,73 @@ type v3FeedResponse struct {
 	} `json:"pagination"`
 }
 
-// Feed returns one page of the episodes of a format. The version 3 API
-// delivers fifty episodes per request, the legacy feed only ten.
-func (c *V3Client) Feed(ctx context.Context, pid, offset, count int) ([]V3Clip, error) {
-	if count <= 0 {
-		count = 50
+// V3FeedQuery describes one page of the feed. Zero values mean "not set";
+// Count defaults to fifty, the legacy feed delivers only ten.
+type V3FeedQuery struct {
+	Offset             int
+	Count              int
+	Before             int64
+	Main               bool
+	WithAccess         bool
+	IncludePremium     bool
+	IncludeEarlyAccess bool
+	Pinned             bool
+	Order              string
+	MagazineID         int
+	CategoryID         int
+	Tags               string
+	TagMode            string
+	TimeFrom           int64
+	TimeTo             int64
+}
+
+// Feed returns one page of the episodes of a format.
+func (c *V3Client) Feed(ctx context.Context, options V3FeedQuery) ([]V3Clip, error) {
+	if options.Count <= 0 {
+		options.Count = 50
 	}
 	query := url.Values{}
-	query.Set("magazineId", strconv.Itoa(pid))
-	query.Set("count", strconv.Itoa(count))
-	query.Set("offset", strconv.Itoa(offset))
-	query.Set("includePremium", "true")
-	query.Set("includeEarlyAccess", "true")
+	query.Set("count", strconv.Itoa(options.Count))
+	query.Set("offset", strconv.Itoa(options.Offset))
+	if options.Before > 0 {
+		query.Set("before", strconv.FormatInt(options.Before, 10))
+	}
+	if options.Main {
+		query.Set("main", "true")
+	}
+	if options.WithAccess {
+		query.Set("withAccess", "true")
+	}
+	if options.IncludePremium {
+		query.Set("includePremium", "true")
+	}
+	if options.IncludeEarlyAccess {
+		query.Set("includeEarlyAccess", "true")
+	}
+	if options.Pinned {
+		query.Set("pinned", "true")
+	}
+	if options.Order != "" {
+		query.Set("order", options.Order)
+	}
+	if options.MagazineID > 0 {
+		query.Set("magazineId", strconv.Itoa(options.MagazineID))
+	}
+	if options.CategoryID > 0 {
+		query.Set("categoryId", strconv.Itoa(options.CategoryID))
+	}
+	if options.Tags != "" {
+		query.Set("tags", options.Tags)
+	}
+	if options.TagMode != "" {
+		query.Set("tagMode", options.TagMode)
+	}
+	if options.TimeFrom > 0 {
+		query.Set("timeFrom", strconv.FormatInt(options.TimeFrom, 10))
+	}
+	if options.TimeTo > 0 {
+		query.Set("timeTo", strconv.FormatInt(options.TimeTo, 10))
+	}
 
 	var answer v3FeedResponse
 	if err := c.request(ctx, http.MethodGet, "content/feed", query, nil, &answer); err != nil {
@@ -607,25 +695,14 @@ func (c *V3Client) Search(ctx context.Context, query string, limit, offset int) 
 	return answer.Clips, nil
 }
 
-// V3Bookmark is one bookmark of the account.
-type V3Bookmark struct {
-	ID           string `json:"id"`
-	MagazineID   int    `json:"magazineId"`
-	Title        string `json:"title"`
-	ProjectTitle string `json:"projectTitle"`
-	Duration     string `json:"duration"`
-	SeqNr        int    `json:"seqNr"`
-	Image        string `json:"image"`
-}
-
 // v3BookmarksResponse is the answer of the bookmark list.
 type v3BookmarksResponse struct {
-	OK    bool         `json:"ok"`
-	Clips []V3Bookmark `json:"clips"`
+	OK    bool     `json:"ok"`
+	Clips []V3Clip `json:"clips"`
 }
 
 // Bookmarks returns the bookmarks of the account.
-func (c *V3Client) Bookmarks(ctx context.Context, limit, offset int) ([]V3Bookmark, error) {
+func (c *V3Client) Bookmarks(ctx context.Context, limit, offset int) ([]V3Clip, error) {
 	if limit <= 0 {
 		limit = 50
 	}

@@ -95,7 +95,7 @@ func (a *App) Formats(ctx context.Context) ([]orangeflix.Format, error) {
 	formats := a.markStaticCatalog(opened)
 
 	if a.V3 != nil {
-		magazines, err := a.V3.Client.Magazines(ctx)
+		magazines, err := a.V3.Client.Magazines(ctx, orangeflix.V3MagazineQuery{})
 		if err == nil && len(magazines) > 0 {
 			place := map[int]int{}
 			for index, format := range formats {
@@ -278,7 +278,7 @@ func (a *App) EpisodesV3(ctx context.Context, pid int) ([]orangeflix.Episode, er
 	const pageSize = 50
 	var all []orangeflix.Episode
 	for offset := 0; offset < 5000; offset += pageSize {
-		clips, err := a.V3.Client.Feed(ctx, pid, offset, pageSize)
+		clips, err := a.V3.Client.Feed(ctx, orangeflix.V3FeedQuery{MagazineID: pid, Offset: offset, Count: pageSize, IncludePremium: true, IncludeEarlyAccess: true})
 		if err != nil {
 			return nil, err
 		}
@@ -327,6 +327,130 @@ func (a *App) Search(ctx context.Context, query string, limit int) ([]orangeflix
 		episodes = append(episodes, episode)
 	}
 	return episodes, nil
+}
+
+// v3Client ensures the version 3 token and returns the client.
+func (a *App) v3Client(ctx context.Context) (*orangeflix.V3Client, error) {
+	if a.V3 == nil || a.V3.Client == nil {
+		return nil, errors.New("the version 3 API is not available")
+	}
+	if err := a.EnsureV3(ctx); err != nil {
+		return nil, err
+	}
+	return a.V3.Client, nil
+}
+
+// Recents returns the clips the account watched most recently.
+func (a *App) Recents(ctx context.Context, limit int) ([]orangeflix.Episode, error) {
+	client, err := a.v3Client(ctx)
+	if err != nil {
+		return nil, err
+	}
+	clips, err := client.Recents(ctx, limit)
+	if err != nil {
+		return nil, err
+	}
+	episodes := make([]orangeflix.Episode, 0, len(clips))
+	for _, clip := range clips {
+		episodes = append(episodes, clip.Episode())
+	}
+	return episodes, nil
+}
+
+// Bookmarks returns the bookmarked clips of the account.
+func (a *App) Bookmarks(ctx context.Context, limit int) ([]orangeflix.Episode, error) {
+	client, err := a.v3Client(ctx)
+	if err != nil {
+		return nil, err
+	}
+	clips, err := client.Bookmarks(ctx, limit, 0)
+	if err != nil {
+		return nil, err
+	}
+	episodes := make([]orangeflix.Episode, 0, len(clips))
+	for _, clip := range clips {
+		episodes = append(episodes, clip.Episode())
+	}
+	return episodes, nil
+}
+
+// SetBookmark puts a clip on the list or removes it.
+func (a *App) SetBookmark(ctx context.Context, identifier string, on bool) error {
+	if identifier == "" {
+		return errors.New("no clip given")
+	}
+	client, err := a.v3Client(ctx)
+	if err != nil {
+		return err
+	}
+	if on {
+		return client.AddBookmark(ctx, identifier)
+	}
+	return client.RemoveBookmark(ctx, identifier)
+}
+
+// Calendar returns the upcoming entries.
+func (a *App) Calendar(ctx context.Context, limit int) ([]orangeflix.V3CalendarEntry, error) {
+	client, err := a.v3Client(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return client.Calendar(ctx, limit)
+}
+
+// Live returns the active, replay or scheduled livestream.
+func (a *App) Live(ctx context.Context) (*orangeflix.V3LiveInfo, error) {
+	client, err := a.v3Client(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return client.LiveActive(ctx)
+}
+
+// Similar returns clips related to an episode.
+func (a *App) Similar(ctx context.Context, identifier string, limit int) ([]orangeflix.Episode, error) {
+	client, err := a.v3Client(ctx)
+	if err != nil {
+		return nil, err
+	}
+	clips, err := client.SimilarClips(ctx, identifier, limit)
+	if err != nil {
+		return nil, err
+	}
+	episodes := make([]orangeflix.Episode, 0, len(clips))
+	for _, clip := range clips {
+		episodes = append(episodes, clip.Episode())
+	}
+	return episodes, nil
+}
+
+// Host returns the page of a guest or host.
+func (a *App) Host(ctx context.Context, identifier string) (*orangeflix.V3HostResponse, error) {
+	client, err := a.v3Client(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return client.Host(ctx, identifier, 0, 50)
+}
+
+// Announcements returns the active alerts and campaigns.
+func (a *App) Announcements(ctx context.Context, surface string, limit int) ([]orangeflix.V3Announcement, error) {
+	client, err := a.v3Client(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return client.Announcements(ctx, surface, limit)
+}
+
+// DownloadEpisode loads one episode from a clip list.
+func (a *App) DownloadEpisode(ctx context.Context, episode orangeflix.Episode) error {
+	format := orangeflix.Format{
+		PID:   episode.PID,
+		Slug:  fmt.Sprintf("format-%d", episode.PID),
+		Title: episode.FormatName,
+	}
+	a.episodeFailures, a.firstFailure = 0, ""
+	return a.downloadEpisode(ctx, format, episode)
 }
 
 // sortEpisodesByNumber sorts the episodes by their number, the oldest first.

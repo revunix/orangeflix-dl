@@ -16,6 +16,10 @@ const (
 	ScreenQueue
 	ScreenSummary
 	ScreenSearch
+	ScreenClips
+	ScreenCalendar
+	ScreenLive
+	ScreenAnnouncements
 )
 
 // breadcrumb returns the path that is shown in the head line.
@@ -39,6 +43,17 @@ func (m *Model) breadcrumb() string {
 		return "Fertig"
 	case ScreenSearch:
 		return "Suche"
+	case ScreenClips:
+		if m.clipList.title != "" {
+			return m.clipList.title
+		}
+		return "Folgen"
+	case ScreenCalendar:
+		return "Kalender"
+	case ScreenLive:
+		return "Live"
+	case ScreenAnnouncements:
+		return "Ankündigungen"
 	}
 	return ""
 }
@@ -63,6 +78,14 @@ func (m *Model) statusChip() string {
 		return "v" + m.version
 	case ScreenSearch:
 		return "Volltext"
+	case ScreenClips:
+		return plural(int64(len(m.clipList.episodes)), "Folge", "Folgen")
+	case ScreenCalendar:
+		return plural(int64(len(m.calendar)), "Termin", "Termine")
+	case ScreenLive:
+		return "Live"
+	case ScreenAnnouncements:
+		return plural(int64(len(m.announcements)), "Hinweis", "Hinweise")
 	}
 	return ""
 }
@@ -94,6 +117,9 @@ func (m *Model) hints() []keyHint {
 	}
 	if m.showAction {
 		return []keyHint{{"↑/↓", "wählen"}, {"enter", "bestätigen"}, {"esc", "abbrechen"}}
+	}
+	if m.showParticipants {
+		return []keyHint{{"↑/↓", "wählen"}, {"enter", "öffnen"}, {"esc", "abbrechen"}}
 	}
 	if m.showPath {
 		return []keyHint{
@@ -128,6 +154,25 @@ func (m *Model) hints() []keyHint {
 	case ScreenSearch:
 		return []keyHint{
 			{"enter", "suchen"}, {"↑/↓", "wählen"}, {"esc", "zurück"}, {"q", "beenden"},
+		}
+	case ScreenClips:
+		return []keyHint{
+			{"↑/↓", "wählen"}, {"enter", "Menü"}, {"w", "ansehen"}, {"d", "laden"},
+			{"b", "merken"}, {"esc", "zurück"}, {"?", "Hilfe"}, {"q", "beenden"},
+		}
+	case ScreenCalendar:
+		return []keyHint{
+			{"↑/↓", "wählen"}, {"enter", "Live"}, {"o", "Link"}, {"y", "kopieren"},
+			{"esc", "zurück"}, {"?", "Hilfe"}, {"q", "beenden"},
+		}
+	case ScreenLive:
+		return []keyHint{
+			{"enter", "ansehen"}, {"r", "Replay"}, {"R", "neu laden"},
+			{"esc", "zurück"}, {"?", "Hilfe"}, {"q", "beenden"},
+		}
+	case ScreenAnnouncements:
+		return []keyHint{
+			{"↑/↓", "wählen"}, {"o", "Link"}, {"esc", "zurück"}, {"?", "Hilfe"}, {"q", "beenden"},
 		}
 	}
 	return nil

@@ -50,6 +50,18 @@ func (a *App) downloadEpisode(ctx context.Context, format orangeflix.Format, epi
 	if err != nil {
 		return fmt.Errorf("ungültige Download-URL für %s: %w", episode.Identifier, err)
 	}
+	// The official endpoint records the download in the statistics and
+	// resolves the short-lived delivery URL. The direct URL stays the
+	// fallback, so a statistics failure never blocks a download.
+	if a.V3 != nil && a.V3.Client != nil && a.V3.Client.AccessToken != "" && file.File != "" {
+		if resolved, resolveErr := a.V3.Client.PlaybackDownloadURL(ctx, episode.Identifier, file.File); resolveErr == nil {
+			if normalized, normErr := a.API.ToHTTPS(resolved); normErr == nil {
+				rawURL = normalized
+			}
+		} else {
+			a.logf("Der offizielle Download für %s ist nicht erreichbar (%s), nutze die direkte Adresse.", episode.Identifier, resolveErr.Error())
+		}
+	}
 
 	naming.Resolution = orangeflix.ResolutionLabel(file)
 	extension := orangeflix.Extension(file)
