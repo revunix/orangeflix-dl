@@ -29,6 +29,10 @@ const (
 	EventSkipped
 	EventDone
 	EventFailed
+	// EventPlaying reports the position of a running playback.
+	EventPlaying
+	// EventPlayed reports the end of the playback.
+	EventPlayed
 )
 
 // Event is one user visible state change.
@@ -39,6 +43,8 @@ type Event struct {
 	Message string
 	Done    int64
 	Total   int64
+	// Error tells that Message describes a failure.
+	Error bool
 	// EpisodeID names the episode the event belongs to.
 	EpisodeID string
 	// PID names the format of the episode.
@@ -82,6 +88,14 @@ type App struct {
 	firstFailure    string
 	failMu          sync.Mutex
 	logFile         *os.File
+
+	// playbackMu guards the running background playback started by Play.
+	playbackMu     sync.Mutex
+	playbackCancel context.CancelFunc
+	playbackDone   chan struct{}
+	playbackID     int
+	// playbackClosed refuses new playbacks after the interface closed.
+	playbackClosed bool
 }
 
 // automatic reports whether the flow must run without asking the user.

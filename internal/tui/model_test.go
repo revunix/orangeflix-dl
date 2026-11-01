@@ -515,6 +515,26 @@ func TestEpisodeStateShowsTheState(t *testing.T) {
 	}
 }
 
+func TestEpisodeStateShowsTheWatchProgress(t *testing.T) {
+	model := testModel()
+	model.screen = ScreenEpisodes
+	model.episodes = []orangeflix.Episode{
+		{Identifier: "mt420", Number: 420, Title: "Folge 420", DurationSeconds: 1200},
+	}
+	model.updateEpisodeProgress("mt420", 300, 1200)
+	if model.episodes[0].ProgressPercent != 25 {
+		t.Errorf("progress = %d, want 25", model.episodes[0].ProgressPercent)
+	}
+	if view := model.View(); !strings.Contains(view, "25 %") {
+		t.Errorf("the view does not show the progress:\n%s", view)
+	}
+
+	model.playback = &playbackStatus{label: "Folge 420", position: 300, duration: 1200}
+	if status := model.statusLine(); !strings.Contains(status, "05:00 / 20:00") {
+		t.Errorf("status = %q", status)
+	}
+}
+
 func TestClipInfoIsShown(t *testing.T) {
 	model := testModel()
 	model.screen = ScreenEpisodes

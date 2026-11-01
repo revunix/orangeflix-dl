@@ -82,7 +82,35 @@ func (h *headlessUI) Event(event app.Event) {
 		fmt.Fprintf(h.out, "· %s (bereits vorhanden)\n", event.Label)
 	case app.EventFailed:
 		fmt.Fprintf(h.out, "\n✗ %s\n", event.Message)
+	case app.EventPlaying:
+		fmt.Fprintf(h.out, "\r▶ %s %s", event.Label, playbackTime(event.Done, event.Total))
+	case app.EventPlayed:
+		marker := "✓"
+		if event.Error {
+			marker = "✗"
+		}
+		fmt.Fprintf(h.out, "\r%s %s\n", marker, event.Message)
 	}
+}
+
+// playbackTime formats the position of the player for the terminal.
+func playbackTime(position, total int64) string {
+	if position < 0 {
+		position = 0
+	}
+	text := clockSeconds(position)
+	if total > 0 {
+		text += " / " + clockSeconds(total)
+	}
+	return text
+}
+
+// clockSeconds formats seconds as mm:ss or h:mm:ss.
+func clockSeconds(seconds int64) string {
+	if seconds >= 3600 {
+		return fmt.Sprintf("%d:%02d:%02d", seconds/3600, (seconds%3600)/60, seconds%60)
+	}
+	return fmt.Sprintf("%02d:%02d", seconds/60, seconds%60)
 }
 
 // readLine reads one line from the input.

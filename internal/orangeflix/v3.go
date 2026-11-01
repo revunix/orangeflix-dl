@@ -510,6 +510,16 @@ func (c *V3Client) Feed(ctx context.Context, pid, offset, count int) ([]V3Clip, 
 	return answer.Clips, nil
 }
 
+// V3Progress is the watch state of a clip. It is written by the website and
+// the app while a clip plays and returned with the playback request, so a
+// later run can continue where the playback stopped.
+type V3Progress struct {
+	HasStarted   bool   `json:"hasStarted"`
+	Percentage   int    `json:"percentage"`
+	LastPosition int    `json:"lastPosition"`
+	LastAccessed string `json:"lastAccessed"`
+}
+
 // V3Playback is the answer of the playback request.
 type V3Playback struct {
 	OK   bool `json:"ok"`
@@ -531,6 +541,8 @@ type V3Playback struct {
 		} `json:"media"`
 		HLSID string `json:"hlsId"`
 	} `json:"stream"`
+	// Progress is the position the account stopped at.
+	Progress V3Progress `json:"progress"`
 }
 
 // Playback returns the files of an episode. The URLs of the files work
@@ -544,6 +556,17 @@ func (c *V3Client) Playback(ctx context.Context, identifier string) (*V3Playback
 		return nil, err
 	}
 	return &answer, nil
+}
+
+// UpdateProgress stores the position the user reached in a clip. The API
+// turns the time into the percentage the website shows; it is the same
+// request the website uses while a clip plays.
+func (c *V3Client) UpdateProgress(ctx context.Context, identifier string, seconds int) error {
+	if seconds < 0 {
+		seconds = 0
+	}
+	body := map[string]any{"time": seconds}
+	return c.request(ctx, http.MethodPost, "playback/"+url.PathEscape(identifier)+"/progress", nil, body, nil)
 }
 
 // V3SearchResult is one hit of the search.

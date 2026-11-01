@@ -43,9 +43,11 @@ type Options struct {
 	Profile func(context.Context) (*app.ProfileSummary, error)
 	// Search looks for clips in the whole catalog.
 	Search func(context.Context, string, int) ([]orangeflix.Episode, error)
-	// Watch plays the episodes with mpv. It returns the command that plays
-	// them.
-	Watch func(context.Context, []orangeflix.Episode) (*app.Player, error)
+	// Watch plays the episodes with mpv. The player runs in the background,
+	// so the interface stays usable.
+	Watch func(context.Context, []orangeflix.Episode) error
+	// StopWatch stops the running playback when the interface closes.
+	StopWatch func()
 	// SetQuality takes over the quality for the next download.
 	SetQuality func(string)
 	// SetDownloadsDir takes over the folder for the downloads.

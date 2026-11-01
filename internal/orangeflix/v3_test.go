@@ -155,6 +155,7 @@ func TestV3Playback(t *testing.T) {
 		case "/api/v3/playback/mt420":
 			_, _ = w.Write([]byte(`{"ok":true,"clip":{"id":"mt420","title":"Folge 420",
 				"subtitles":[{"lang":"de","url":"https://example.org/mt420.webvtt"}]},
+				"progress":{"hasStarted":true,"percentage":25,"lastPosition":300,"lastAccessed":"2026-11-01 19:00:00"},
 				"stream":{"media":{"files":[
 					{"url":"https://cdn.example.org/mt420FULLHD.mp4","desc":"HD 1080p","dimensions":"1920x1080","size":826564514},
 					{"url":"https://cdn.example.org/mt420.m4a","desc":"Audio m4a","t":"music"}
@@ -176,6 +177,39 @@ func TestV3Playback(t *testing.T) {
 	}
 	if playback.Clip.Subtitles[0].Lang != "de" {
 		t.Errorf("language = %q", playback.Clip.Subtitles[0].Lang)
+	}
+	if playback.Progress.LastPosition != 300 || playback.Progress.Percentage != 25 {
+		t.Errorf("progress = %+v", playback.Progress)
+	}
+}
+
+// TestV3UpdateProgress checks that the position is sent like the website
+// does it.
+func TestV3UpdateProgress(t *testing.T) {
+	var method, path, body string
+	client := testV3Client(t, func(w http.ResponseWriter, r *http.Request) {
+		method = r.Method
+		path = r.URL.Path
+		data, _ := io.ReadAll(r.Body)
+		body = string(data)
+		_, _ = w.Write([]byte(`{"ok":true}`))
+	})
+	client.AccessToken = "token-1"
+
+	if err := client.UpdateProgress(context.Background(), "mt420", 1250); err != nil {
+		t.Fatalf("UpdateProgress: %v", err)
+	}
+	if method != http.MethodPost {
+		t.Errorf("method = %q", method)
+	}
+	if path != "/api/v3/playback/mt420/progress" {
+		t.Errorf("path = %q", path)
+	}
+	if !strings.Contains(body, `"time":1250`) {
+		t.Errorf("body = %q", body)
+	}
+	if client.AccessToken != "token-1" {
+		t.Errorf("token = %q", client.AccessToken)
 	}
 }
 

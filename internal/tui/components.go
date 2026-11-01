@@ -336,6 +336,9 @@ func statusBadge(state string) string {
 	case "offen":
 		return theme.Muted.Render("○ offen")
 	}
+	if strings.HasPrefix(state, "▶ ") {
+		return theme.Accent.Render(state)
+	}
 	return theme.Muted.Render(state)
 }
 

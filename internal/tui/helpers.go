@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/revunix/orangeflix-dl/internal/orangeflix"
@@ -209,6 +210,17 @@ func padNumber(value, width int) string {
 		text = "0" + text
 	}
 	return text
+}
+
+// playbackClock formats a position of the player.
+func playbackClock(seconds int) string {
+	if seconds < 0 {
+		seconds = 0
+	}
+	if seconds >= 3600 {
+		return fmt.Sprintf("%d:%02d:%02d", seconds/3600, (seconds%3600)/60, seconds%60)
+	}
+	return fmt.Sprintf("%02d:%02d", seconds/60, seconds%60)
 }
 
 // humanDuration formats a duration in seconds.

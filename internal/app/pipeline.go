@@ -33,11 +33,11 @@ func (a *App) downloadEpisode(ctx context.Context, format orangeflix.Format, epi
 		return nil
 	}
 
-	files, subtitles, creds, err := a.episodeFiles(ctx, episode)
+	source, err := a.episodeSource(ctx, episode)
 	if err != nil {
 		return fmt.Errorf("die Metadaten von %s konnten nicht geladen werden: %w", episode.Identifier, err)
 	}
-	file, exact, err := orangeflix.SelectFile(files, a.quality())
+	file, exact, err := orangeflix.SelectFile(source.Files, a.quality())
 	if err != nil {
 		return fmt.Errorf("für %s gibt es keine Datei: %w", episode.Identifier, err)
 	}
@@ -61,7 +61,7 @@ func (a *App) downloadEpisode(ctx context.Context, format orangeflix.Format, epi
 	a.event(Event{Kind: EventQueued, Label: naming.EpisodeName(), Path: target, EpisodeID: episode.Identifier, PID: format.PID})
 	a.logf("Lade %s ...", naming.EpisodeName())
 
-	result, err := a.Downloader.Download(ctx, rawURL, target, creds, func(done, total int64) {
+	result, err := a.Downloader.Download(ctx, rawURL, target, source.Credentials, func(done, total int64) {
 		a.event(Event{Kind: EventProgress, Label: naming.EpisodeName(), Done: done, Total: total, EpisodeID: episode.Identifier, PID: format.PID})
 	})
 	if err != nil {
@@ -76,21 +76,38 @@ func (a *App) downloadEpisode(ctx context.Context, format orangeflix.Format, epi
 	a.logf("Fertig: %s (%s)", result.Path, humanSize(result.Size))
 	a.event(Event{Kind: EventDone, Label: naming.EpisodeName(), Path: result.Path, EpisodeID: episode.Identifier, PID: format.PID})
 	a.markDownloaded(format.PID, episode.Identifier, result.Path)
-	a.saveSubtitles(ctx, subtitles, result.Path)
+	a.saveSubtitles(ctx, source.Subtitles, result.Path)
 	a.saveSidecars(ctx, episode, result.Path)
 	return nil
 }
 
-// episodeFiles returns the download files and the subtitles of an episode.
+// episodeSource is what the APIs know about the files of an episode.
+type episodeSource struct {
+	// Files are the available qualities.
+	Files []orangeflix.File
+	// Subtitles are the addresses of the subtitles.
+	Subtitles []string
+	// Credentials are needed by the legacy API, nil for the delivery network.
+	Credentials *download.Credentials
+	// Progress is the watch state of the account, empty without the version 3
+	// API.
+	Progress orangeflix.V3Progress
+}
+
+// episodeSource returns the download files and the subtitles of an episode.
 // The version 3 API is preferred: its files lie on the delivery network and
 // work without credentials. The legacy API is the fallback.
-func (a *App) episodeFiles(ctx context.Context, episode orangeflix.Episode) ([]orangeflix.File, []string, *download.Credentials, error) {
+func (a *App) episodeSource(ctx context.Context, episode orangeflix.Episode) (episodeSource, error) {
 	if a.V3 != nil {
 		if err := a.EnsureV3(ctx); err == nil {
 			playback, err := a.V3.Client.Playback(ctx, episode.Identifier)
 			if err == nil && len(playback.Stream.Media.Files) > 0 {
 				// The files of the delivery network carry no credentials.
-				return playback.Stream.Media.Files, subtitleURLs(playback), nil, nil
+				return episodeSource{
+					Files:     playback.Stream.Media.Files,
+					Subtitles: subtitleURLs(playback),
+					Progress:  playback.Progress,
+				}, nil
 			}
 			if err != nil {
 				a.logf("Die Version-3-API liefert keine Datei für %s (%s), nutze die alte API.", episode.Identifier, err.Error())
@@ -100,10 +117,10 @@ func (a *App) episodeFiles(ctx context.Context, episode orangeflix.Episode) ([]o
 
 	clip, err := a.API.Clip(ctx, episode.Identifier)
 	if err != nil {
-		return nil, nil, nil, err
+		return episodeSource{}, err
 	}
 	creds := &download.Credentials{Username: a.Credentials.Username, Password: a.Credentials.Password}
-	return clip.Files, nil, creds, nil
+	return episodeSource{Files: clip.Files, Credentials: creds}, nil
 }
 
 // subtitleURLs returns the addresses of the subtitles of a clip.

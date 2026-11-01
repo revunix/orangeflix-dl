@@ -73,6 +73,13 @@ func (m *Model) statusLine() string {
 	if m.loading {
 		return m.spinner.View() + " " + m.loadingLabel
 	}
+	if m.playback != nil {
+		text := "▶ " + truncateColumn(m.playback.label, 28) + " " + playbackClock(m.playback.position)
+		if m.playback.duration > 0 {
+			text += " / " + playbackClock(m.playback.duration)
+		}
+		return text
+	}
 	return ""
 }
 

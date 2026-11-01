@@ -208,7 +208,8 @@ Das Programm benutzt die API v3, die auch die Orangeflix-App nutzt:
 1. **Anmeldung** über `POST /api/v3/auth/login` mit E-Mail und Passwort. Die Antwort enthält einen Zugriffstoken, der sieben Tage gilt. Der Token landet im Schlüsselbund des Systems und wird bei den nächsten Starts wiederverwendet - das Konto darf nur eine begrenzte Zahl neuer Sitzungen anlegen, deshalb loggt das Programm nur einmal pro Woche ein.
 2. **Katalog** über `GET /api/v3/content/magazines` (ohne Token): alle Formate mit Nummer, Titel, Kürzel, Status und der Zahl der Folgen.
 3. **Episoden** über `GET /api/v3/content/feed` mit fünfzig Folgen je Anfrage. Fällt die API aus, kommen der RSS-Feed und die alte JSON-API als Rückfall.
-4. **Dateien** über `GET /api/v3/playback/{id}`. Die Dateien liegen auf dem Auslieferungsnetz und lassen sich ohne Zugangsdaten laden; der Token steckt in der URL und ist an die Sitzung gebunden.
+4. **Dateien** über `GET /api/v3/playback/{id}`. Die Dateien liegen auf dem Auslieferungsnetz und lassen sich ohne Zugangsdaten laden; der Token steckt in der URL und ist an die Sitzung gebunden. Die Antwort nennt außerdem den gespeicherten Stand (`progress.lastPosition`).
+5. **Fortschritt** über `POST /api/v3/playback/{id}/progress` mit `{"time": <sekunden>}` und dem Zugriffstoken. Die API rechnet die Sekunden in den Prozentstand um, den die Website zeigt; denselben Aufruf nutzt der Browser-Player.
 
 Ein Konto mit zweitem Faktor meldet die API mit `requiresTotp`; der Code kommt mit `--totp <code>` oder `ORANGEFLIX_TOTP` zum Lauf, im Headless-Modus fragt das Programm ihn sonst an der Konsole ab. In der TUI steht im Anmeldefenster das Feld „2FA-Code“; der Code gilt für genau eine Anmeldung. Verlangt die API einen Code, der fehlt oder nicht angenommen wird, kehrt die TUI ins Anmeldefenster zurück und setzt den Cursor in dieses Feld. Danach liegt der Token im Schlüsselbund, ein neuer Code ist erst nötig, wenn er abläuft oder andere Zugangsdaten eingetragen werden. Das Erscheinungsbild wechselt im Anmeldefenster mit `ctrl+t`.
 
@@ -296,7 +297,9 @@ Der Zielordner steht standardmäßig unter `<Arbeitsverzeichnis>/downloads`. Mit
 
 Die Folgen lassen sich auch direkt ansehen, ohne sie herunterzuladen. Ein Klick auf eine Folge (`enter`) öffnet ein Menü mit den Möglichkeiten **Herunterladen**, **Mit mpv ansehen** und **Abbrechen**; `d` lädt direkt, `w` spielt direkt. Markierte Folgen werden alle zusammen geladen oder abgespielt, sonst nur die angeklickte.
 
-Beim Abspielen gibt die Oberfläche das Terminal an [mpv](https://mpv.io/) frei und kommt danach zurück. mpv bekommt die Adresse der Datei direkt vom Auslieferungsnetz – es wird nichts gespeichert.
+Beim Abspielen startet [mpv](https://mpv.io/) im Hintergrund: mpv öffnet sein eigenes Fenster, während die Oberfläche stehen bleibt und weiter bedienbar ist. Der Kopf zeigt die laufende Folge mit der aktuellen Position. mpv bekommt die Adresse der Datei direkt vom Auslieferungsnetz – es wird nichts gespeichert.
+
+Der Fortschritt geht während des Ansehens alle 30 Sekunden an das Konto und beim Beenden noch einmal. Die Website zeigt die Folge danach als angefangen an, und beim nächsten Abspielen setzt das Programm an der gespeicherten Position fort. In der Episodenliste steht der Stand als „▶ 21 %“.
 
 Ohne Oberfläche geht es auch:
 

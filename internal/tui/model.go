@@ -115,6 +115,13 @@ type summary struct {
 	failed  int
 }
 
+// playbackStatus is the position of the running playback.
+type playbackStatus struct {
+	label    string
+	position int
+	duration int
+}
+
 // Model is the state of the interface.
 type Model struct {
 	ctx     context.Context
@@ -234,10 +241,13 @@ type Model struct {
 	jobs    []job
 	log     []string
 	showLog bool
-	spinner spinner.Model
-	summary summary
-	message string
-	isError bool
+	// playback is the position of the running player, nil when nothing
+	// plays.
+	playback *playbackStatus
+	spinner  spinner.Model
+	summary  summary
+	message  string
+	isError  bool
 	// quitting ends the program.
 	quitting bool
 	exitCode int
@@ -252,7 +262,8 @@ type Model struct {
 	loadFormatsCatalog func(context.Context) ([]orangeflix.Format, error)
 	loadProfileState   func(context.Context) (*app.ProfileSummary, error)
 	runSearchCatalog   func(context.Context, string, int) ([]orangeflix.Episode, error)
-	watchEpisodesFunc  func(context.Context, []orangeflix.Episode) (*app.Player, error)
+	watchEpisodesFunc  func(context.Context, []orangeflix.Episode) error
+	stopWatch          func()
 	setSelection       func([]string)
 	setCredentials     func(user, password string)
 	setTotp            func(code string)
@@ -338,6 +349,7 @@ func NewModel(ctx context.Context, opts Options) *Model {
 		loadFormatsCatalog: opts.Formats,
 		loadProfileState:   opts.Profile,
 		watchEpisodesFunc:  opts.Watch,
+		stopWatch:          opts.StopWatch,
 		runSearchCatalog:   opts.Search,
 		setSelection:       opts.SetSelection,
 		setQuality:         opts.SetQuality,
@@ -539,16 +551,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.isError = true
 			return m, nil
 		}
-		m.message = ""
+		m.message = "Wiedergabe läuft in mpv."
 		m.isError = false
-		// Der Player übernimmt das Terminal, danach kommt die Oberfläche
-		// zurück.
-		return m, m.startPlayer(message.Player)
-	case playerDoneMsg:
-		if message.err != nil {
-			m.message = "Der Player ist beendet: " + message.err.Error()
-			m.isError = true
-		}
 		return m, nil
 	}
 	return m, nil
@@ -598,6 +602,36 @@ func (m *Model) applyEvent(event app.Event) {
 		m.summary.failed++
 		m.message = event.Message
 		m.isError = true
+	case app.EventPlaying:
+		m.playback = &playbackStatus{
+			label:    event.Label,
+			position: int(event.Done),
+			duration: int(event.Total),
+		}
+		m.updateEpisodeProgress(event.EpisodeID, event.Done, event.Total)
+	case app.EventPlayed:
+		m.playback = nil
+		if event.Message != "" {
+			m.message = event.Message
+			m.isError = event.Error
+		}
+	}
+}
+
+// updateEpisodeProgress takes over the position of the player into the list.
+func (m *Model) updateEpisodeProgress(identifier string, position, duration int64) {
+	if identifier == "" || duration <= 0 {
+		return
+	}
+	percent := int(float64(position)/float64(duration)*100 + 0.5)
+	if percent > 100 {
+		percent = 100
+	}
+	for index := range m.episodes {
+		if m.episodes[index].Identifier == identifier {
+			m.episodes[index].ProgressPercent = percent
+			return
+		}
 	}
 }
 
@@ -611,8 +645,12 @@ func (m *Model) SetSize(width, height int) {
 // ExitCode returns the exit code of the program.
 func (m *Model) ExitCode() int { return m.exitCode }
 
-// Close releases the resources of the model.
-func (m *Model) Close() {}
+// Close releases the resources of the model and stops the player.
+func (m *Model) Close() {
+	if m.stopWatch != nil {
+		m.stopWatch()
+	}
+}
 
 // setTheme switches the color scheme and keeps the choice.
 func (m *Model) setTheme(name Theme) {

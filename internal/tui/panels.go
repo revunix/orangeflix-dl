@@ -552,6 +552,9 @@ func (m *Model) episodeDetail(box rect) []string {
 		lines = append(lines, detailRow("Format", episode.FormatName))
 	}
 	lines = append(lines, detailRow("Status", m.episodeState(episode.Identifier)))
+	if episode.ProgressPercent > 0 && episode.ProgressPercent < 100 {
+		lines = append(lines, detailRow("Gesehen", fmt.Sprintf("%d %%", episode.ProgressPercent)))
+	}
 	if len(episode.Participants) > 0 {
 		names := make([]string, 0, len(episode.Participants))
 		for _, participant := range episode.Participants {
@@ -839,16 +842,25 @@ func (m *Model) episodeNew(identifier string) bool {
 	return time.Since(known.FirstSeen) < 7*24*time.Hour
 }
 
-// episodeState returns the state of an episode: geladen, neu or offen.
+// episodeState returns the state of an episode: geladen, the watched share,
+// neu or offen.
 func (m *Model) episodeState(identifier string) string {
-	switch {
-	case m.episodeLoaded(identifier):
+	if m.episodeLoaded(identifier) {
 		return statusBadge("geladen")
-	case m.episodeNew(identifier):
-		return statusBadge("neu")
-	default:
-		return statusBadge("offen")
 	}
+	for _, episode := range m.episodes {
+		if episode.Identifier != identifier {
+			continue
+		}
+		if episode.ProgressPercent > 0 && episode.ProgressPercent < 100 {
+			return statusBadge(fmt.Sprintf("▶ %d %%", episode.ProgressPercent))
+		}
+		break
+	}
+	if m.episodeNew(identifier) {
+		return statusBadge("neu")
+	}
+	return statusBadge("offen")
 }
 
 // episodeIdentifier returns the identifier of the marked episode.

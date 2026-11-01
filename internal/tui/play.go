@@ -1,24 +1,20 @@
 package tui
 
 import (
-	"os/exec"
-
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/revunix/orangeflix-dl/internal/app"
 	"github.com/revunix/orangeflix-dl/internal/orangeflix"
 )
 
-// WatchMsg carries the command that plays the episodes.
+// WatchMsg carries the result of the start of the playback.
 type WatchMsg struct {
-	// Player is the command, das den Player startet.
-	Player *app.Player
 	// Err is the reason, warum es nicht geklappt hat.
 	Err error
 }
 
 // watchEpisodes plays the marked episodes with mpv. Ohne Markierung wird
-// die Folge unter dem Cursor abgespielt.
+// die Folge unter dem Cursor abgespielt. Der Player läuft im Hintergrund,
+// die Oberfläche bleibt stehen.
 func (m *Model) watchEpisodes() (tea.Model, tea.Cmd) {
 	episodes := m.playableEpisodes()
 	if len(episodes) == 0 {
@@ -32,10 +28,10 @@ func (m *Model) watchEpisodes() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	m.loading = true
-	m.loadingLabel = "Suche die Datei …"
+	m.loadingLabel = "Starte den Player …"
 	return m, func() tea.Msg {
-		player, err := m.watchEpisodesFunc(m.ctx, episodes)
-		return WatchMsg{Player: player, Err: err}
+		err := m.watchEpisodesFunc(m.ctx, episodes)
+		return WatchMsg{Err: err}
 	}
 }
 
@@ -60,17 +56,4 @@ func (m *Model) playableEpisodes() []orangeflix.Episode {
 		index = 0
 	}
 	return []orangeflix.Episode{episodes[index]}
-}
-
-// startPlayer gives the terminal to the player and comes back afterwards.
-func (m *Model) startPlayer(player *app.Player) tea.Cmd {
-	command := exec.Command(player.Binary, player.Args...)
-	return tea.ExecProcess(command, func(err error) tea.Msg {
-		return playerDoneMsg{err: err}
-	})
-}
-
-// playerDoneMsg is the message after the player has finished.
-type playerDoneMsg struct {
-	err error
 }

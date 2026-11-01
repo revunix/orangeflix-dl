@@ -243,8 +243,11 @@ func Run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 			Search: func(searchCtx context.Context, query string, limit int) ([]orangeflix.Episode, error) {
 				return application.Search(searchCtx, query, limit)
 			},
-			Watch: func(watchCtx context.Context, episodes []orangeflix.Episode) (*app.Player, error) {
-				return application.PlayerFor(watchCtx, episodes)
+			Watch: func(watchCtx context.Context, episodes []orangeflix.Episode) error {
+				return application.Play(watchCtx, episodes)
+			},
+			StopWatch: func() {
+				application.ShutdownPlayback()
 			},
 			SetQuality: func(quality string) {
 				application.SetQuality(quality)
