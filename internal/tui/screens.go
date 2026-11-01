@@ -127,6 +127,9 @@ func (m *Model) hints() []keyHint {
 			{"ctrl+v", "einfügen"}, {"enter", "übernehmen"}, {"esc", "abbrechen"},
 		}
 	}
+	if m.screen == ScreenLive && m.chatFocused {
+		return []keyHint{{"enter", "senden"}, {"esc", "Eingabe verlassen"}, {"↑/↓", "blättern"}}
+	}
 	switch m.screen {
 	case ScreenStart:
 		return []keyHint{
@@ -167,8 +170,8 @@ func (m *Model) hints() []keyHint {
 		}
 	case ScreenLive:
 		return []keyHint{
-			{"enter", "ansehen"}, {"r", "Replay"}, {"R", "neu laden"},
-			{"esc", "zurück"}, {"?", "Hilfe"}, {"q", "beenden"},
+			{"enter", "ansehen"}, {"r", "Replay"}, {"c", "Chat"},
+			{"R", "neu laden"}, {"esc", "zurück"}, {"?", "Hilfe"}, {"q", "beenden"},
 		}
 	case ScreenAnnouncements:
 		return []keyHint{

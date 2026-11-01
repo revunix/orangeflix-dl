@@ -167,9 +167,9 @@ func (m *Model) body(width, height int) []string {
 		screen = m.placeLowerBoxes(screen, logBox, info)
 		return m.render(screen, width)
 	case ScreenLive:
-		box, logBox, info := m.wideBoxes(width, height)
-		screen = place(screen, box, m.livePanel(box))
-		screen = m.placeLowerBoxes(screen, logBox, info)
+		infoBox, chatBox := m.liveBoxes(width, height)
+		screen = place(screen, infoBox, m.livePanel(infoBox))
+		screen = place(screen, chatBox, m.chatPanel(chatBox))
 		return m.render(screen, width)
 	}
 
@@ -211,6 +211,21 @@ func (m *Model) render(screen []screenRow, width int) []string {
 		rows = append(rows, row.render(width))
 	}
 	return rows
+}
+
+// liveBoxes puts the stream information above the live chat.
+func (m *Model) liveBoxes(width, height int) (info, chat rect) {
+	inner := width - 2*margin
+	available := height - 2*margin
+	infoHeight := max(7, min(11, available/3))
+	chatHeight := available - infoHeight - gap
+	if chatHeight < 5 {
+		infoHeight = max(5, available/2)
+		chatHeight = max(3, available-infoHeight-gap)
+	}
+	info = rect{x: margin, y: margin, width: inner, height: infoHeight}
+	chat = rect{x: margin, y: margin + infoHeight + gap, width: inner, height: chatHeight}
+	return info, chat
 }
 
 // wideBoxes calculates the places for the screens with one big box on top

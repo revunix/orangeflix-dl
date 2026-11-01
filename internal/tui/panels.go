@@ -1197,3 +1197,100 @@ func (m *Model) participantPopup(width int) []string {
 	}
 	return windowBoxFootColor(36, "Gast", "", theme.BoxList, content)
 }
+
+// chatPanel renders the live chat with its input line.
+func (m *Model) chatPanel(box rect) []string {
+	width := box.innerWidth()
+	content := []string{}
+	lines := m.chatBody(width)
+	height := box.innerHeight() - 2
+	if height < 1 {
+		height = 1
+	}
+	end := len(lines) - m.chatScroll
+	if end > len(lines) {
+		end = len(lines)
+	}
+	if end < 0 {
+		end = 0
+	}
+	start := end - height
+	if start < 0 {
+		start = 0
+	}
+	content = append(content, lines[start:end]...)
+	if m.live == nil || !m.live.IsLive {
+		content = append(content, theme.Muted.Render("Chat gibt es nur bei Livesendungen."))
+		return renderBoxAt(box.width, box.height, "Live-Chat", theme.BoxList, trimContent(content, box.innerHeight()))
+	}
+	if m.live.Show != nil && !m.live.Show.Chat {
+		content = append(content, theme.Muted.Render("Für diese Sendung ist kein Chat eingeschaltet."))
+		return renderBoxAt(box.width, box.height, "Live-Chat", theme.BoxList, trimContent(content, box.innerHeight()))
+	}
+	if !m.chatConnected && m.chatStatus != "" {
+		content = append(content, theme.Warning.Render(truncateColumn(m.chatStatus, width)))
+	}
+	if m.chatConnected {
+		m.chatInput.Width = max(10, width-4)
+		if m.chatFocused {
+			content = append(content, m.chatInput.View())
+		} else {
+			content = append(content, theme.Muted.Render("c tippen · ↑↓ blättern"))
+		}
+	} else if m.chatLoading {
+		content = append(content, theme.Muted.Render(m.spinner.View()+" verbinde …"))
+	}
+	return renderBoxAt(box.width, box.height, "Live-Chat", theme.BoxList, trimContent(content, box.innerHeight()))
+}
+
+// chatBody wraps every chat message into the width of the panel.
+func (m *Model) chatBody(width int) []string {
+	lines := []string{}
+	for _, message := range m.chatMessages {
+		if message.system {
+			for _, part := range wrapText("· "+message.text, width) {
+				lines = append(lines, theme.Muted.Render(part))
+			}
+			continue
+		}
+		from := message.from
+		if message.self {
+			from = "Du"
+		}
+		if from == "" {
+			from = "?"
+		}
+		stamp := "     "
+		if !message.time.IsZero() {
+			stamp = message.time.Local().Format("15:04")
+		}
+		prefix := stamp + " " + from + ": "
+		if message.pending {
+			prefix = "… " + prefix
+		}
+		available := max(10, width-len(prefix))
+		parts := wrapText(message.text, available)
+		if len(parts) == 0 {
+			parts = []string{""}
+		}
+		for index, part := range parts {
+			var text string
+			if index == 0 {
+				text = prefix + part
+			} else {
+				text = strings.Repeat(" ", len(prefix)) + part
+			}
+			switch {
+			case message.pending:
+				lines = append(lines, theme.Muted.Render(text))
+			case message.admin:
+				lines = append(lines, theme.Warning.Render(text))
+			case message.self:
+				lines = append(lines, theme.Accent.Render(text))
+			default:
+				lines = append(lines, theme.Text.Render(text))
+			}
+		}
+	}
+	return lines
+}

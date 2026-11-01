@@ -1454,3 +1454,78 @@ func TestTheHelpStartsWithTheOpenScreen(t *testing.T) {
 		t.Fatalf("the keys are not in the accent color: %q", lines[4])
 	}
 }
+
+func TestChatMessagesAppear(t *testing.T) {
+	model := testModel()
+	model.screen = ScreenLive
+	model.live = &orangeflix.V3LiveInfo{IsLive: true, Show: &orangeflix.V3LiveShow{Title: "Live", Chat: true, IsLive: true}}
+	model.chatConnected = true
+	model.applyEvent(app.Event{Kind: app.EventChat, Label: "Gast", Message: "Hallo Chat", Done: time.Now().Unix()})
+	view := model.View()
+	if !strings.Contains(view, "Live-Chat") || !strings.Contains(view, "Hallo Chat") {
+		t.Errorf("the chat message is not visible:\n%s", view)
+	}
+}
+
+func TestChatSendAndDeduplicate(t *testing.T) {
+	model := testModel()
+	model.screen = ScreenLive
+	model.live = &orangeflix.V3LiveInfo{IsLive: true, Show: &orangeflix.V3LiveShow{Chat: true, IsLive: true}}
+	model.chatConnected = true
+	var sent string
+	model.sendChatFunc = func(_ context.Context, text string) error {
+		sent = text
+		return nil
+	}
+	model.chatInput.SetValue("Meine Nachricht")
+	updated, cmd := model.sendChat()
+	model = updated.(*Model)
+	if sent != "" {
+		// The callback runs in the command, not before it.
+		t.Errorf("sent before the command: %q", sent)
+	}
+	if len(model.chatMessages) != 1 || !model.chatMessages[0].pending {
+		t.Fatalf("messages = %+v", model.chatMessages)
+	}
+	if cmd != nil {
+		model.Update(cmd())
+	}
+	if sent != "Meine Nachricht" {
+		t.Errorf("sent = %q", sent)
+	}
+	model.applyEvent(app.Event{Kind: app.EventChat, Label: "Gast", Message: "Meine Nachricht", Done: time.Now().Unix(), Self: true})
+	if len(model.chatMessages) != 1 || model.chatMessages[0].pending {
+		t.Errorf("the echo was not merged: %+v", model.chatMessages)
+	}
+}
+
+func TestChatStartsForLive(t *testing.T) {
+	model := testModel()
+	called := false
+	model.openChatFunc = func(context.Context) error {
+		called = true
+		return nil
+	}
+	updated, cmd := model.Update(LiveMsg{Live: &orangeflix.V3LiveInfo{IsLive: true, Show: &orangeflix.V3LiveShow{Chat: true, IsLive: true}}})
+	model = updated.(*Model)
+	if cmd == nil {
+		t.Fatal("no chat command")
+	}
+	model.Update(cmd())
+	if !called || !model.chatConnected {
+		t.Errorf("called=%v connected=%v", called, model.chatConnected)
+	}
+}
+
+func TestChatOnlyStartsWhenEnabled(t *testing.T) {
+	model := testModel()
+	called := false
+	model.openChatFunc = func(context.Context) error {
+		called = true
+		return nil
+	}
+	_, cmd := model.Update(LiveMsg{Live: &orangeflix.V3LiveInfo{IsLive: true, Show: &orangeflix.V3LiveShow{Chat: false, IsLive: true}}})
+	if cmd != nil || called {
+		t.Error("the chat started although it is disabled")
+	}
+}

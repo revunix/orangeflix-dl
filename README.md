@@ -218,8 +218,13 @@ Ein Konto mit zweitem Faktor meldet die API mit `requiresTotp`; der Code kommt m
 | Bildschirm | Tasten |
 |------------|--------|
 | Start | `tab` Feld wechseln, `ctrl+t` Erscheinungsbild, `enter` starten, `esc` beenden |
-| Formate | `↑`/`↓` wählen, `enter` öffnen, `/` filtern, `f` Volltextsuche, `b` nur die Bibliothek, `a` merken, `n` prüfen, `d` neue Folgen laden, `s` Zugangsdaten, `p` Speicherort, `?` Hilfe, `q` beenden |
-| Episoden | `↑`/`↓` wählen, `space` markieren, `a` alle, `enter` Menü (laden oder ansehen), `d` laden, `w` mit mpv ansehen, `i` Qualitäten, `J` nach Jahr filtern, `y` Titel kopieren, `x` Datei löschen, `p` Speicherort, `esc` zurück |
+| Formate | `↑`/`↓` wählen, `enter` öffnen, `/` filtern, `f` Volltextsuche, `b` nur die Bibliothek, `a` merken, `n` prüfen, `d` neue Folgen laden, `c` Weiterschauen, `m` Merkliste, `K` Kalender, `L` Live, `!` Ankündigungen, `s` Zugangsdaten, `p` Speicherort, `?` Hilfe, `q` beenden |
+| Episoden | `↑`/`↓` wählen, `space` markieren, `a` alle, `enter` Menü (laden oder ansehen), `d` laden, `w` mit mpv ansehen, `b` merken, `r` ähnliche Folgen, `h` Gast, `i` Qualitäten, `J` nach Jahr filtern, `y` Titel kopieren, `x` Datei löschen, `p` Speicherort, `esc` zurück |
+| Weiterschauen | `w` ansehen, `d` laden, `b` merken, `esc` zurück |
+| Merkliste | `w` ansehen, `d` laden, `b` entfernen, `esc` zurück |
+| Kalender | `enter` Live-Ansicht, `o` Link öffnen, `y` Titel kopieren, `esc` zurück |
+| Live | `enter`/`w` ansehen, `r` Replay, `c` Chat schreiben, `R` neu laden, `esc` zurück |
+| Ankündigungen | `o` Link öffnen, `esc` zurück |
 | Suche | `enter` suchen, `↑`/`↓` Treffer wählen, `esc` zurück |
 | Downloads | `l` Protokoll, `y` Pfad kopieren, `o` Ordner öffnen, `x` Datei löschen, `q` beenden |
 | Fertig | `enter` zurück zu den Formaten |
@@ -300,6 +305,8 @@ Die Folgen lassen sich auch direkt ansehen, ohne sie herunterzuladen. Ein Klick 
 Beim Abspielen startet [mpv](https://mpv.io/) im Hintergrund: mpv öffnet sein eigenes Fenster, während die Oberfläche stehen bleibt und weiter bedienbar ist. Der Kopf zeigt die laufende Folge mit der aktuellen Position. mpv bekommt die Adresse der Datei direkt vom Auslieferungsnetz – es wird nichts gespeichert.
 
 Der Fortschritt geht während des Ansehens alle 30 Sekunden an das Konto und beim Beenden noch einmal. Die Website zeigt die Folge danach als angefangen an, und beim nächsten Abspielen setzt das Programm an der gespeicherten Position fort. In der Episodenliste steht der Stand als „▶ 21 %“.
+
+Bei einer Livesendung (`L`) steht unter der Sendung der Live-Chat. `c` setzt den Cursor ins Eingabefeld, `enter` schickt die Nachricht, `esc` verlässt das Feld; mit `↑`/`↓` blättert man durch die Nachrichten. Der Chat verbindet sich beim Öffnen der Live-Ansicht automatisch und wird beim Verlassen wieder getrennt.
 
 Ohne Oberfläche geht es auch:
 

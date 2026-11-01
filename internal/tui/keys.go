@@ -38,6 +38,9 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.showPath {
 		return m.handlePathKey(msg)
 	}
+	if m.screen == ScreenLive && m.chatFocused {
+		return m.handleChatKey(msg)
+	}
 
 	switch m.screen {
 	case ScreenSplash:
@@ -823,9 +826,25 @@ func (m *Model) handleLiveKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		m.message = "Keine Wiederholung verfügbar."
 		m.isError = true
+	case "c":
+		if !m.chatConnected {
+			m.chatStatus = "Der Chat ist nicht verbunden."
+			return m, nil
+		}
+		m.chatFocused = true
+		return m, m.chatInput.Focus()
+	case "up", "k":
+		if m.chatScroll < len(m.chatMessages) {
+			m.chatScroll++
+		}
+	case "down", "j":
+		if m.chatScroll > 0 {
+			m.chatScroll--
+		}
 	case "R":
 		return m, m.loadLive()
 	case "esc":
+		m.closeChat()
 		m.screen = m.liveBack
 		if m.screen == ScreenSplash || m.screen == ScreenStart {
 			m.screen = ScreenFormats
@@ -835,10 +854,36 @@ func (m *Model) handleLiveKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.showHelp = true
 		return m, nil
 	case "q":
+		m.closeChat()
 		m.quitting = true
 		return m, tea.Quit
 	}
 	return m, nil
+}
+
+// handleChatKey processes the keys while the chat input has the focus.
+func (m *Model) handleChatKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "enter":
+		return m.sendChat()
+	case "esc":
+		m.chatFocused = false
+		m.chatInput.Blur()
+		return m, nil
+	case "up", "pgup":
+		if m.chatScroll < len(m.chatMessages) {
+			m.chatScroll++
+		}
+		return m, nil
+	case "down", "pgdown":
+		if m.chatScroll > 0 {
+			m.chatScroll--
+		}
+		return m, nil
+	}
+	var cmd tea.Cmd
+	m.chatInput, cmd = m.chatInput.Update(msg)
+	return m, cmd
 }
 
 // handleAnnouncementKey processes the keys of the announcements.

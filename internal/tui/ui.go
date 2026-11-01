@@ -62,6 +62,12 @@ type Options struct {
 	Live func(context.Context) (*orangeflix.V3LiveInfo, error)
 	// PlayLive starts a live stream or replay.
 	PlayLive func(context.Context, *orangeflix.V3LiveInfo, string) error
+	// OpenChat connects to the live chat.
+	OpenChat func(context.Context) error
+	// SendChat writes a message to the live chat.
+	SendChat func(context.Context, string) error
+	// CloseChat disconnects the live chat.
+	CloseChat func()
 	// Similar loads clips related to an episode.
 	Similar func(context.Context, string, int) ([]orangeflix.Episode, error)
 	// Host loads the page of a guest.

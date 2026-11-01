@@ -118,6 +118,7 @@ func (m *Model) openCalendar() (tea.Model, tea.Cmd) {
 
 // openLive opens the live screen.
 func (m *Model) openLive() (tea.Model, tea.Cmd) {
+	m.closeChat()
 	m.liveBack = ScreenFormats
 	m.screen = ScreenLive
 	return m, m.loadLive()

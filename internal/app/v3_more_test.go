@@ -192,3 +192,11 @@ func TestLiveRunnerReport(t *testing.T) {
 		t.Errorf("body = %q", body)
 	}
 }
+
+func TestSendChatWithoutSession(t *testing.T) {
+	application := &App{}
+	if err := application.SendChat(context.Background(), "Hallo"); err == nil {
+		t.Fatal("want an error without a chat session")
+	}
+	application.CloseChat()
+}

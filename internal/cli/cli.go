@@ -270,6 +270,15 @@ func Run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 			PlayLive: func(ctx context.Context, info *orangeflix.V3LiveInfo, mode string) error {
 				return application.PlayLive(ctx, info, mode)
 			},
+			OpenChat: func(ctx context.Context) error {
+				return application.OpenChat(ctx)
+			},
+			SendChat: func(ctx context.Context, text string) error {
+				return application.SendChat(ctx, text)
+			},
+			CloseChat: func() {
+				application.CloseChat()
+			},
 			Similar: func(ctx context.Context, identifier string, limit int) ([]orangeflix.Episode, error) {
 				return application.Similar(ctx, identifier, limit)
 			},

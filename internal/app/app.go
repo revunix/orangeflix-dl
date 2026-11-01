@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/revunix/orangeflix-dl/internal/chat"
 	"github.com/revunix/orangeflix-dl/internal/config"
 	"github.com/revunix/orangeflix-dl/internal/download"
 	"github.com/revunix/orangeflix-dl/internal/media"
@@ -33,6 +34,10 @@ const (
 	EventPlaying
 	// EventPlayed reports the end of the playback.
 	EventPlayed
+	// EventChat reports one line of the live chat.
+	EventChat
+	// EventChatStatus reports a state of the live chat.
+	EventChatStatus
 )
 
 // Event is one user visible state change.
@@ -45,6 +50,10 @@ type Event struct {
 	Total   int64
 	// Error tells that Message describes a failure.
 	Error bool
+	// Self tells that the chat message was written by the account.
+	Self bool
+	// Admin tells that the chat message came from an admin.
+	Admin bool
 	// EpisodeID names the episode the event belongs to.
 	EpisodeID string
 	// PID names the format of the episode.
@@ -96,6 +105,10 @@ type App struct {
 	playbackID     int
 	// playbackClosed refuses new playbacks after the interface closed.
 	playbackClosed bool
+
+	// chatMu guards the live chat session.
+	chatMu      sync.Mutex
+	chatSession *chat.Session
 }
 
 // automatic reports whether the flow must run without asking the user.

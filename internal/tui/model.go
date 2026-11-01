@@ -92,6 +92,10 @@ type (
 	}
 	// PlayLiveMsg carries the result of a live start.
 	PlayLiveMsg struct{ Err error }
+	// ChatStartedMsg carries the result of a chat connection.
+	ChatStartedMsg struct{ Err error }
+	// ChatSentMsg carries the result of sending a chat message.
+	ChatSentMsg struct{ Err error }
 	// SimilarMsg carries the clips similar to an episode.
 	SimilarMsg struct {
 		Source   string
@@ -177,6 +181,17 @@ const (
 )
 
 // clipList is the state of the generic clip screen.
+// chatLine is one line of the live chat.
+type chatLine struct {
+	from    string
+	text    string
+	time    time.Time
+	self    bool
+	admin   bool
+	system  bool
+	pending bool
+}
+
 type clipList struct {
 	kind       clipListKind
 	title      string
@@ -328,10 +343,18 @@ type Model struct {
 	// showParticipants draws the guest picker.
 	showParticipants  bool
 	participantCursor int
-	spinner           spinner.Model
-	summary           summary
-	message           string
-	isError           bool
+	// chat is the live chat of the current stream.
+	chatInput     textinput.Model
+	chatMessages  []chatLine
+	chatFocused   bool
+	chatConnected bool
+	chatLoading   bool
+	chatStatus    string
+	chatScroll    int
+	spinner       spinner.Model
+	summary       summary
+	message       string
+	isError       bool
 	// quitting ends the program.
 	quitting bool
 	exitCode int
@@ -358,6 +381,9 @@ type Model struct {
 	similarFunc         func(context.Context, string, int) ([]orangeflix.Episode, error)
 	hostFunc            func(context.Context, string) (*orangeflix.V3HostResponse, error)
 	announcementsFunc   func(context.Context, string, int) ([]orangeflix.V3Announcement, error)
+	openChatFunc        func(context.Context) error
+	sendChatFunc        func(context.Context, string) error
+	closeChatFunc       func()
 	setSelection        func([]string)
 	setCredentials      func(user, password string)
 	setTotp             func(code string)
@@ -397,6 +423,12 @@ func NewModel(ctx context.Context, opts Options) *Model {
 	filter.CharLimit = 60
 	filter.Width = 30
 
+	chat := textinput.New()
+	chat.Placeholder = "Nachricht an den Live-Chat"
+	chat.CharLimit = 500
+	chat.Prompt = "› "
+	chat.Width = 40
+
 	search := textinput.New()
 	search.Placeholder = "Suchbegriff"
 	search.CharLimit = 80
@@ -432,6 +464,7 @@ func NewModel(ctx context.Context, opts Options) *Model {
 		totpInput:           totp,
 		filterInput:         filter,
 		searchInput:         search,
+		chatInput:           chat,
 		yearInput:           year,
 		pathInput:           path,
 		run:                 opts.Run,
@@ -454,6 +487,9 @@ func NewModel(ctx context.Context, opts Options) *Model {
 		similarFunc:         opts.Similar,
 		hostFunc:            opts.Host,
 		announcementsFunc:   opts.Announcements,
+		openChatFunc:        opts.OpenChat,
+		sendChatFunc:        opts.SendChat,
+		closeChatFunc:       opts.CloseChat,
 		runSearchCatalog:    opts.Search,
 		setSelection:        opts.SetSelection,
 		setQuality:          opts.SetQuality,
@@ -725,6 +761,15 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.live = message.Live
 		m.screen = ScreenLive
 		m.isError = false
+		if m.live == nil || !m.live.IsLive {
+			m.closeChat()
+		}
+		if m.live != nil && m.live.IsLive && (m.live.Show == nil || m.live.Show.Chat) && !m.chatConnected && !m.chatLoading {
+			m.chatMessages = nil
+			m.chatStatus = ""
+			m.chatLoading = true
+			return m, m.startChat()
+		}
 		return m, nil
 	case PlayLiveMsg:
 		m.loading = false
@@ -790,6 +835,34 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.message = fmt.Sprintf("%d Ankündigung(en) · ! öffnet sie", len(message.Items))
 		}
 		m.isError = false
+		return m, nil
+	case ChatStartedMsg:
+		m.chatLoading = false
+		if message.Err != nil {
+			m.chatConnected = false
+			m.chatStatus = message.Err.Error()
+			m.chatMessages = append(m.chatMessages, chatLine{text: "Chat nicht erreichbar: " + message.Err.Error(), system: true})
+			return m, nil
+		}
+		m.chatConnected = true
+		m.chatStatus = "Chat verbunden"
+		return m, nil
+	case ChatSentMsg:
+		if message.Err != nil {
+			for index := len(m.chatMessages) - 1; index >= 0; index-- {
+				if m.chatMessages[index].pending {
+					m.chatMessages = append(m.chatMessages[:index], m.chatMessages[index+1:]...)
+					break
+				}
+			}
+			m.chatMessages = append(m.chatMessages, chatLine{text: "Nachricht nicht gesendet: " + message.Err.Error(), system: true})
+		} else {
+			for index := range m.chatMessages {
+				if m.chatMessages[index].pending {
+					m.chatMessages[index].pending = false
+				}
+			}
+		}
 		return m, nil
 	case WatchMsg:
 		m.loading = false
@@ -862,6 +935,52 @@ func (m *Model) applyEvent(event app.Event) {
 			m.message = event.Message
 			m.isError = event.Error
 		}
+	case app.EventChat:
+		if m.screen != ScreenLive {
+			return
+		}
+		moment := time.Time{}
+		if event.Done > 0 {
+			moment = time.Unix(event.Done, 0)
+		}
+		line := chatLine{
+			from:  event.Label,
+			text:  event.Message,
+			time:  moment,
+			self:  event.Self,
+			admin: event.Admin,
+		}
+		if event.Self {
+			for index := len(m.chatMessages) - 1; index >= 0; index-- {
+				old := m.chatMessages[index]
+				if !old.self || old.system || old.text != line.text {
+					continue
+				}
+				if !old.time.IsZero() && time.Since(old.time) > 15*time.Second {
+					break
+				}
+				m.chatMessages[index] = line
+				return
+			}
+		}
+		m.chatMessages = append(m.chatMessages, line)
+		if len(m.chatMessages) > 300 {
+			m.chatMessages = m.chatMessages[len(m.chatMessages)-300:]
+		}
+		if m.chatScroll == 0 {
+			m.chatScroll = 0
+		}
+	case app.EventChatStatus:
+		m.chatStatus = event.Message
+		switch event.Message {
+		case "Chat getrennt":
+			m.chatConnected = false
+		case "Chat verbunden":
+			m.chatConnected = true
+		}
+		if event.Error {
+			m.chatMessages = append(m.chatMessages, chatLine{text: event.Message, system: true})
+		}
 	}
 }
 
@@ -904,6 +1023,7 @@ func (m *Model) Close() {
 	if m.stopWatch != nil {
 		m.stopWatch()
 	}
+	m.closeChat()
 }
 
 // setTheme switches the color scheme and keeps the choice.
