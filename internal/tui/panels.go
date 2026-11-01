@@ -815,16 +815,16 @@ func trimContent(content []string, height int) []string {
 	return content
 }
 
-// truncateColumn shortens a text to the width of its column.
+// truncateColumn shortens a text to the width of its column, counted in
+// terminal cells.
 func truncateColumn(value string, width int) string {
 	if width <= 0 {
 		return ""
 	}
-	runes := []rune(value)
-	if len(runes) <= width {
+	if ansi.StringWidth(value) <= width {
 		return value
 	}
-	return string(runes[:max(1, width-1)]) + "…"
+	return ansi.Truncate(value, width, "…")
 }
 
 // episodeLoaded reports whether the episode was downloaded.
@@ -1203,7 +1203,16 @@ func (m *Model) chatPanel(box rect) []string {
 	width := box.innerWidth()
 	content := []string{}
 	lines := m.chatBody(width)
-	height := box.innerHeight() - 2
+	// The foot takes only the lines it really shows: the status when the
+	// chat is not connected, and the input or the spinner below it.
+	reserved := 0
+	if !m.chatConnected && m.chatStatus != "" {
+		reserved++
+	}
+	if m.chatConnected || m.chatLoading {
+		reserved++
+	}
+	height := box.innerHeight() - reserved
 	if height < 1 {
 		height = 1
 	}
@@ -1260,6 +1269,7 @@ func (m *Model) chatBody(width int) []string {
 		if from == "" {
 			from = "?"
 		}
+		from = truncateColumn(from, max(4, min(20, width/3)))
 		stamp := "     "
 		if !message.time.IsZero() {
 			stamp = message.time.Local().Format("15:04")
@@ -1268,7 +1278,10 @@ func (m *Model) chatBody(width int) []string {
 		if message.pending {
 			prefix = "… " + prefix
 		}
-		available := max(10, width-len(prefix))
+		// The prefix is measured in cells: a name with an umlaut or an emoji
+		// is wider than its byte count says.
+		prefixWidth := ansi.StringWidth(prefix)
+		available := max(10, width-prefixWidth)
 		parts := wrapText(message.text, available)
 		if len(parts) == 0 {
 			parts = []string{""}
@@ -1278,7 +1291,7 @@ func (m *Model) chatBody(width int) []string {
 			if index == 0 {
 				text = prefix + part
 			} else {
-				text = strings.Repeat(" ", len(prefix)) + part
+				text = strings.Repeat(" ", prefixWidth) + part
 			}
 			switch {
 			case message.pending:

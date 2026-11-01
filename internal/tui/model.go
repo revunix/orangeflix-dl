@@ -841,7 +841,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if message.Err != nil {
 			m.chatConnected = false
 			m.chatStatus = message.Err.Error()
-			m.chatMessages = append(m.chatMessages, chatLine{text: "Chat nicht erreichbar: " + message.Err.Error(), system: true})
+			m.chatMessages = append(m.chatMessages, chatLine{text: "Chat nicht erreichbar: " + cleanChatText(message.Err.Error()), system: true})
 			return m, nil
 		}
 		m.chatConnected = true
@@ -855,7 +855,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					break
 				}
 			}
-			m.chatMessages = append(m.chatMessages, chatLine{text: "Nachricht nicht gesendet: " + message.Err.Error(), system: true})
+			m.chatMessages = append(m.chatMessages, chatLine{text: "Nachricht nicht gesendet: " + cleanChatText(message.Err.Error()), system: true})
 		} else {
 			for index := range m.chatMessages {
 				if m.chatMessages[index].pending {
@@ -944,8 +944,8 @@ func (m *Model) applyEvent(event app.Event) {
 			moment = time.Unix(event.Done, 0)
 		}
 		line := chatLine{
-			from:  event.Label,
-			text:  event.Message,
+			from:  cleanChatText(event.Label),
+			text:  cleanChatText(event.Message),
 			time:  moment,
 			self:  event.Self,
 			admin: event.Admin,
@@ -971,7 +971,7 @@ func (m *Model) applyEvent(event app.Event) {
 			m.chatScroll = 0
 		}
 	case app.EventChatStatus:
-		m.chatStatus = event.Message
+		m.chatStatus = cleanChatText(event.Message)
 		switch event.Message {
 		case "Chat getrennt":
 			m.chatConnected = false
@@ -979,7 +979,7 @@ func (m *Model) applyEvent(event app.Event) {
 			m.chatConnected = true
 		}
 		if event.Error {
-			m.chatMessages = append(m.chatMessages, chatLine{text: event.Message, system: true})
+			m.chatMessages = append(m.chatMessages, chatLine{text: cleanChatText(event.Message), system: true})
 		}
 	}
 }

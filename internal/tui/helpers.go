@@ -3,7 +3,9 @@ package tui
 import (
 	"fmt"
 	"strings"
+	"unicode"
 
+	"github.com/charmbracelet/x/ansi"
 	"github.com/revunix/orangeflix-dl/internal/orangeflix"
 )
 
@@ -23,7 +25,34 @@ func (m *Model) frameWidth() int {
 	return defaultFrameWidth
 }
 
-// wrapText breaks a text into lines of at most the width.
+// cleanChatText makes text from the chat safe for the layout. Control
+// characters (an escape sequence or a line break smuggled in through an HTML
+// entity), joiners, variation selectors and skin tones are removed: the
+// terminal and the width table disagree about their width, and one wrong
+// cell pushes the box apart. All white space becomes a single space.
+func cleanChatText(value string) string {
+	var builder strings.Builder
+	builder.Grow(len(value))
+	for _, r := range value {
+		switch {
+		case unicode.IsSpace(r):
+			builder.WriteRune(' ')
+		case unicode.IsControl(r), unicode.Is(unicode.Cf, r):
+		case r >= 0xFE00 && r <= 0xFE0F:
+		case r >= 0x1F3FB && r <= 0x1F3FF:
+		case r == 0x20E3:
+		case r >= 0xE0000 && r <= 0xE007F:
+		case r == 0xFFFD:
+		default:
+			builder.WriteRune(r)
+		}
+	}
+	return strings.Join(strings.Fields(builder.String()), " ")
+}
+
+// wrapText breaks a text into lines of at most the width. The width is
+// counted in terminal cells, and a word that does not fit on a line of its
+// own is split: an emoji or a long link must not push the frame apart.
 func wrapText(value string, width int) []string {
 	if width <= 0 {
 		return nil
@@ -34,15 +63,35 @@ func wrapText(value string, width int) []string {
 	}
 	var lines []string
 	current := ""
+	currentWidth := 0
 	for _, word := range words {
+		wordWidth := ansi.StringWidth(word)
+		for wordWidth > width {
+			if current != "" {
+				lines = append(lines, current)
+				current, currentWidth = "", 0
+			}
+			head := ansi.Truncate(word, width, "")
+			if head == "" {
+				// A single character wider than the line: it goes out on a
+				// line of its own and the frame cuts it.
+				lines = append(lines, word)
+				word, wordWidth = "", 0
+				break
+			}
+			lines = append(lines, head)
+			word = ansi.TruncateLeft(word, ansi.StringWidth(head), "")
+			wordWidth = ansi.StringWidth(word)
+		}
 		switch {
 		case current == "":
-			current = word
-		case len([]rune(current))+1+len([]rune(word)) <= width:
+			current, currentWidth = word, wordWidth
+		case currentWidth+1+wordWidth <= width:
 			current += " " + word
+			currentWidth += 1 + wordWidth
 		default:
 			lines = append(lines, current)
-			current = word
+			current, currentWidth = word, wordWidth
 		}
 	}
 	if current != "" {
@@ -159,9 +208,11 @@ func padRight(value string, width int) string {
 	return value + strings.Repeat(" ", gap)
 }
 
-// visibleWidth returns the width of a text without the ANSI sequences.
+// visibleWidth returns the width of a text in terminal cells. ANSI sequences
+// carry no width, and a wide character (an emoji, a CJK rune) takes two cells:
+// counting runes would let a box drift out of its frame.
 func visibleWidth(value string) int {
-	return len([]rune(stripANSI(value)))
+	return ansi.StringWidth(value)
 }
 
 // stripANSI removes the ANSI sequences of a text.
