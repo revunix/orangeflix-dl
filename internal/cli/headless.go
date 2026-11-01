@@ -85,6 +85,9 @@ func (h *headlessUI) Event(event app.Event) {
 	case app.EventPlaying:
 		fmt.Fprintf(h.out, "\r▶ %s %s", event.Label, playbackTime(event.Done, event.Total))
 	case app.EventPlayed:
+		if event.Message == "" {
+			break
+		}
 		marker := "✓"
 		if event.Error {
 			marker = "✗"

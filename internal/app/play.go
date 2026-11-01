@@ -226,6 +226,8 @@ type playbackRunner struct {
 	app   *App
 	items []playbackItem
 
+	// reportMu keeps the reports in order and guards the first error.
+	reportMu          sync.Mutex
 	reportErrorLogged bool
 }
 
@@ -264,7 +266,7 @@ func (r *playbackRunner) runItem(ctx context.Context, item playbackItem) (bool, 
 	defer func() { _ = os.RemoveAll(dir) }()
 
 	socket := mpvSocketPath(dir)
-	args := []string{"--no-terminal", "--input-ipc-server=" + socket}
+	args := []string{"--no-terminal", "--idle=no", "--keep-open=no", "--input-ipc-server=" + socket}
 	args = append(args, item.player.Args...)
 
 	command := exec.CommandContext(ctx, item.player.Binary, args...)
@@ -302,6 +304,7 @@ func (r *playbackRunner) runItem(ctx context.Context, item playbackItem) (bool, 
 	lastReported := 0
 	lastReport := time.Now()
 	finished := false
+	quitSent := false
 	var waitErr error
 
 	r.app.eventPlaying(item, position, duration)
@@ -327,6 +330,13 @@ loop:
 			}
 			if ipc.reachedEnd() {
 				finished = true
+				// Eigene Einstellungen können mpv am Ende offen halten;
+				// der Prozess wird beendet, damit der nächste Start und die
+				// Oberfläche nicht warten.
+				if !quitSent {
+					quitSent = true
+					_ = ipc.send("quit")
+				}
 			}
 			if duration > 0 && position >= duration-2 {
 				finished = true
@@ -336,7 +346,9 @@ loop:
 				r.app.eventPlaying(item, position, duration)
 			}
 			if time.Since(lastReport) >= playbackReportInterval && position > lastReported {
-				r.report(ctx, item.episode.Identifier, position)
+				// Der Bericht darf die Erkennung des Player-Endes nicht
+				// aufhalten.
+				go r.report(ctx, item.episode.Identifier, position)
 				lastReported = position
 				lastReport = time.Now()
 			}
@@ -351,13 +363,16 @@ loop:
 			position = duration
 		}
 	}
-	// Der letzte Stand geht auch dann an das Konto, wenn das Programm oder
-	// der Player gerade beendet wurde. Nach dem Abbruch bekommt die
-	// Oberfläche keine Meldung mehr: sie ist bereits geschlossen.
-	r.reportFinal(item.episode.Identifier, position)
+	// Die Oberfläche erfährt sofort vom Ende des Players, bevor der letzte
+	// Stand noch an das Konto geht. Nach einem Abbruch bekommt sie keine
+	// Meldung mehr: sie ist bereits geschlossen.
 	if ctx.Err() == nil {
 		r.app.eventPlaying(item, position, duration)
+		r.app.event(Event{Kind: EventPlayed})
 	}
+	// Der letzte Stand geht auch dann an das Konto, wenn das Programm oder
+	// der Player gerade beendet wurde.
+	r.reportFinal(item.episode.Identifier, position)
 
 	if waitErr != nil && ctx.Err() == nil && !finished {
 		message := strings.TrimSpace(stderr.String())
@@ -388,6 +403,8 @@ func (r *playbackRunner) report(ctx context.Context, identifier string, position
 	}
 	reportCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
+	r.reportMu.Lock()
+	defer r.reportMu.Unlock()
 	r.sendReport(reportCtx, identifier, position)
 }
 
@@ -399,6 +416,8 @@ func (r *playbackRunner) reportFinal(identifier string, position int) {
 	}
 	reportCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
+	r.reportMu.Lock()
+	defer r.reportMu.Unlock()
 	r.sendReport(reportCtx, identifier, position)
 }
 
