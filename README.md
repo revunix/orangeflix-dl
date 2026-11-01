@@ -110,7 +110,7 @@ brew install orangeflix-dl
 
 Die Formel installiert das fertige Binary aus dem jeweils neuesten Release für die eigene Plattform (macOS und Linux, Intel und ARM), dazu die Kompletion für bash, zsh und fish und die Manpage. Aktualisieren geht mit `brew upgrade orangeflix-dl`. Zum Ansehen mit `--watch` braucht es [mpv](https://mpv.io/) (`brew install mpv`).
 
-Der Release-Workflow schreibt `Formula/orangeflix-dl.rb` nach jedem neuen Release selbst um (`scripts/update-formula.sh`); die Formel muss nicht von Hand gepflegt werden.
+Die Formel fragt beim Laden selbst das neueste Release bei GitHub ab (Version, URLs und die Prüfsummen aus dessen `checksums.txt`); `brew upgrade` findet neue Versionen also ohne Änderung am Repository, und jedes Archiv wird weiter gegen seine Prüfsumme geprüft. Ist GitHub nicht erreichbar, gilt die im Repository eingetragene Version. Diese schreibt der Release-Workflow nach jedem neuen Release selbst um (`scripts/update-formula.sh`).
 
 ### Release-Archive
 
