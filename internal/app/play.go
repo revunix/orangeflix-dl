@@ -261,7 +261,7 @@ func (r *playbackRunner) runItem(ctx context.Context, item playbackItem) (bool, 
 	if err != nil {
 		return false, err
 	}
-	defer os.RemoveAll(dir)
+	defer func() { _ = os.RemoveAll(dir) }()
 
 	socket := mpvSocketPath(dir)
 	args := []string{"--no-terminal", "--input-ipc-server=" + socket}
@@ -281,8 +281,9 @@ func (r *playbackRunner) runItem(ctx context.Context, item playbackItem) (bool, 
 	ipc, ipcErr := dialMPV(ctx, socket, exited)
 	if ipcErr != nil {
 		if !errors.Is(ipcErr, errPlayerExited) {
+			// Der Wartegoroutine meldet den Fehler in den gepufferten Kanal; sie
+			// räumt den Prozess selbst ab.
 			_ = command.Process.Kill()
-			<-exited
 		}
 		return false, fmt.Errorf("%s konnte nicht erreicht werden: %w", item.player.Binary, ipcErr)
 	}
