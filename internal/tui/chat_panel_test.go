@@ -57,7 +57,7 @@ func TestTheChatKeepsItsBox(t *testing.T) {
 	// border, not the ellipsis of a truncated line.
 	head := len(model.header(model.width))
 	body := model.height - head - len(model.footer(model.width))
-	_, chat := model.liveBoxes(model.width, body)
+	_, _, chat := model.liveBoxes(model.width, body)
 	for row := chat.y; row < chat.y+chat.height && head+row < len(lines); row++ {
 		line := lines[head+row]
 		cell := ansi.Strip(ansi.Cut(line, chat.x+chat.width-1, chat.x+chat.width))

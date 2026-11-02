@@ -81,6 +81,7 @@ func (m *Model) helpEntries() []helpEntry {
 			{"r", "Replay ansehen"},
 			{"R", "neu laden"},
 			{"s", "Nachricht wählen"},
+			{"1…9", "abstimmen"},
 			{"a", "antworten"},
 			{"enter .", "Reaktionen"},
 			{"tab", "im Feld: Chat/Studio"},

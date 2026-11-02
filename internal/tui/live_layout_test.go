@@ -12,7 +12,7 @@ import (
 func TestTheChatStandsLeftOfTheLiveBox(t *testing.T) {
 	model := interactiveChat()
 	model.width, model.height = 140, 40
-	info, chat := model.liveBoxes(model.width, 34)
+	info, _, chat := model.liveBoxes(model.width, 34)
 	if chat.x >= info.x || chat.width <= info.width {
 		t.Errorf("chat %+v, info %+v: the chat must stand left and wide", chat, info)
 	}
@@ -38,7 +38,7 @@ func TestTheChatStandsLeftOfTheLiveBox(t *testing.T) {
 
 func TestANarrowTerminalStacksTheBoxes(t *testing.T) {
 	model := interactiveChat()
-	info, chat := model.liveBoxes(80, 34)
+	info, _, chat := model.liveBoxes(80, 34)
 	if info.y >= chat.y || info.width != chat.width || chat.height <= info.height {
 		t.Errorf("info %+v, chat %+v: the info must stand small above the chat", info, chat)
 	}

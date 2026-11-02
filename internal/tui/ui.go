@@ -85,6 +85,8 @@ type Options struct {
 	ChatReactions func(context.Context, []string) ([]app.ChatReaction, map[string]string, error)
 	// ChatAvatar loads the picture of a chat user.
 	ChatAvatar func(context.Context, string) ([]byte, error)
+	// VotePoll answers a voting of the live show.
+	VotePoll func(context.Context, int) error
 	// CloseChat disconnects the live chat.
 	CloseChat func()
 	// Similar loads clips related to an episode.

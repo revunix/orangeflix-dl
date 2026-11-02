@@ -34,6 +34,9 @@ const (
 	// EventReaction carries reactions: the state of the history or one
 	// change.
 	EventReaction
+	// EventPoll carries a voting of the live show: the new one, the changed
+	// votes or the end.
+	EventPoll
 )
 
 // Message is one line of the live chat.
@@ -59,6 +62,11 @@ type Event struct {
 	Reactions []ReactionState
 	Update    *ReactionUpdate
 	Emojis    map[string]string
+	// Poll is the voting, Answers the number of its choices; PollRemoved
+	// tells that the voting is over and gone.
+	Poll        *Poll
+	PollAnswers int
+	PollRemoved bool
 }
 
 // Session is one connection to the live chat.
@@ -67,6 +75,9 @@ type Session struct {
 	events    chan Event
 	done      chan struct{}
 	closeOnce sync.Once
+	// poll is the running voting; pollMu guards it.
+	poll   *Poll
+	pollMu sync.Mutex
 }
 
 // Open connects to the chat and logs in with the token.
@@ -113,6 +124,26 @@ func Open(ctx context.Context, baseURL, namespace, jwt, username string) (*Sessi
 		}
 		// Die Reaktionen der Vorgeschichte stehen nicht in den Nachrichten.
 		go session.fetchReactions(ids)
+	})
+	client.On("newVoting", func(data json.RawMessage) {
+		if poll, ok := parsePoll(data); ok {
+			session.send(Event{Kind: EventPoll, Poll: &poll})
+		}
+	})
+	client.On("voteOccured", func(data json.RawMessage) {
+		session.updatePoll(data)
+	})
+	client.On("votingClosed", func(data json.RawMessage) {
+		session.updatePoll(data)
+	})
+	client.On("resultsVisibilityChanged", func(data json.RawMessage) {
+		session.updatePoll(data)
+	})
+	client.On("submissionCount", func(data json.RawMessage) {
+		session.updatePoll(data)
+	})
+	client.On("deleteVoting", func(data json.RawMessage) {
+		session.send(Event{Kind: EventPoll, PollRemoved: true})
 	})
 	client.On("metadata", func(data json.RawMessage) {
 		if update, ok := parseMetadataEvent(data, username); ok {
@@ -314,4 +345,58 @@ func pinnedText(raw json.RawMessage) string {
 		return pinnedText(list[0])
 	}
 	return ""
+}
+
+// updatePoll takes over the new votes of the running voting.
+func (s *Session) updatePoll(data json.RawMessage) {
+	poll := s.currentPoll()
+	if poll == nil {
+		return
+	}
+	if pollID, results, submissions, ok := parsePollResults(data, len(poll.Answers)); ok {
+		if pollID != "" && poll.PollID != "" && pollID != poll.PollID {
+			return
+		}
+		poll.Results = results
+		poll.ResultsVisible = true
+		if submissions > 0 {
+			poll.Submissions = submissions
+		}
+	}
+	if pollID, visible, results, submissions, ok := parsePollVisibility(data, len(poll.Answers)); ok {
+		if poll.PollID != "" && pollID != poll.PollID {
+			return
+		}
+		poll.ResultsVisible = visible
+		if visible && results != nil {
+			poll.Results = results
+		}
+		if submissions > 0 {
+			poll.Submissions = submissions
+		}
+	}
+	if closed := closedPoll(data); closed {
+		poll.Closed = true
+		poll.ResultsVisible = true
+	}
+	copy := *poll
+	s.send(Event{Kind: EventPoll, Poll: &copy})
+}
+
+// currentPoll returns the running voting.
+func (s *Session) currentPoll() *Poll {
+	s.pollMu.Lock()
+	defer s.pollMu.Unlock()
+	return s.poll
+}
+
+// closedPoll tells that the server ended the voting.
+func closedPoll(raw json.RawMessage) bool {
+	var wire struct {
+		Closed bool `json:"closed"`
+	}
+	if err := json.Unmarshal(raw, &wire); err != nil {
+		return false
+	}
+	return wire.Closed
 }

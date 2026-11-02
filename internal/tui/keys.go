@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"time"
 
@@ -941,6 +942,14 @@ func (m *Model) handleLiveKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "s":
 		m.startChatSelect()
 		return m, nil
+	case "1", "2", "3", "4", "5", "6", "7", "8", "9":
+		// Die Ziffern wählen eine Antwort der Abstimmung.
+		if m.hasPoll() {
+			answer, err := strconv.Atoi(msg.String())
+			if err == nil {
+				return m.votePoll(answer - 1)
+			}
+		}
 	case "enter", "w":
 		if m.live != nil && m.live.IsLive && m.live.HasAccess() {
 			return m.playLive("live")

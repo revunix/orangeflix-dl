@@ -40,6 +40,8 @@ const (
 	EventChatStatus
 	// EventChatReaction carries reactions of chat messages.
 	EventChatReaction
+	// EventChatPoll carries a voting of the live show.
+	EventChatPoll
 )
 
 // Event is one user visible state change.
@@ -69,6 +71,22 @@ type Event struct {
 	Reactions []ChatReaction
 	Reaction  *ChatReactionChange
 	Emojis    map[string]string
+	// Poll is a voting of the live show; PollRemoved tells that it is
+	// gone.
+	Poll        *ChatPoll
+	PollRemoved bool
+}
+
+// ChatPoll is a voting of the live show.
+type ChatPoll struct {
+	Question       string
+	Answers        []string
+	Results        []int
+	PollID         string
+	Secret         bool
+	ResultsVisible bool
+	Submissions    int
+	Closed         bool
 }
 
 // ChatReaction is the reactions of one chat message.

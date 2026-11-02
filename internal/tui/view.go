@@ -360,8 +360,11 @@ func (m *Model) body(width, height int) []string {
 		screen = m.placeLowerBoxes(screen, logBox, info)
 		return m.render(screen, width)
 	case ScreenLive:
-		infoBox, chatBox := m.liveBoxes(width, height)
+		infoBox, pollBox, chatBox := m.liveBoxes(width, height)
 		screen = place(screen, infoBox, m.livePanel(infoBox))
+		if pollBox.height > 0 {
+			screen = place(screen, pollBox, m.pollPanel(pollBox))
+		}
 		screen = place(screen, chatBox, m.chatPanel(chatBox))
 		return m.render(screen, width)
 	}
@@ -406,11 +409,12 @@ func (m *Model) render(screen []screenRow, width int) []string {
 	return rows
 }
 
-// liveBoxes places the chat and the stream information. On a wide terminal
-// the chat takes the left two thirds over the whole height and the
-// information stands beside it on the right; on a narrow one the
-// information stands small above the chat.
-func (m *Model) liveBoxes(width, height int) (info, chat rect) {
+// liveBoxes places the chat, the stream information and the voting. On a
+// wide terminal the chat takes the left two thirds over the whole height;
+// the information stands beside it on the right, the voting under it. On a
+// narrow one the information stands small above the chat, and the voting
+// between them.
+func (m *Model) liveBoxes(width, height int) (info, poll, chat rect) {
 	inner := width - 2*margin
 	available := height - 2*margin
 	if width >= twoColumnWidth {
@@ -418,17 +422,49 @@ func (m *Model) liveBoxes(width, height int) (info, chat rect) {
 		chatWidth := inner - gap - infoWidth
 		chat = rect{x: margin, y: margin, width: chatWidth, height: available}
 		info = rect{x: margin + chatWidth + gap, y: margin, width: infoWidth, height: available}
-		return info, chat
+		if m.hasPoll() {
+			// Die Live-Box braucht nicht die ganze Höhe, das Feld darunter
+			// gehört der Abstimmung.
+			infoHeight := max(9, (available-gap)*3/5)
+			info.height = infoHeight
+			poll = rect{x: margin + chatWidth + gap, y: margin + infoHeight + gap, width: infoWidth, height: available - infoHeight - gap}
+		}
+		return info, poll, chat
 	}
 	infoHeight := max(6, min(9, available/4))
-	chatHeight := available - infoHeight - gap
+	pollHeight := 0
+	if m.hasPoll() {
+		pollHeight = max(6, min(11, available/4))
+		if infoHeight+pollHeight+2*gap+8 > available {
+			pollHeight = max(5, (available-infoHeight-gap)*2/3)
+		}
+	}
+	chatHeight := available - infoHeight - pollHeight - gap
+	if pollHeight > 0 {
+		chatHeight -= gap
+	}
 	if chatHeight < 8 {
 		infoHeight = max(5, available/3)
-		chatHeight = max(3, available-infoHeight-gap)
+		if pollHeight > 0 {
+			pollHeight = max(5, (available-infoHeight-gap)*2/3)
+		}
+		chatHeight = available - infoHeight - pollHeight - gap
+		if pollHeight > 0 {
+			chatHeight -= gap
+		}
+	}
+	if chatHeight < 4 {
+		pollHeight = 0
+		chatHeight = available - infoHeight - gap
 	}
 	info = rect{x: margin, y: margin, width: inner, height: infoHeight}
+	if pollHeight > 0 {
+		poll = rect{x: margin, y: margin + infoHeight + gap, width: inner, height: pollHeight}
+		chat = rect{x: margin, y: margin + infoHeight + pollHeight + 2*gap, width: inner, height: chatHeight}
+		return info, poll, chat
+	}
 	chat = rect{x: margin, y: margin + infoHeight + gap, width: inner, height: chatHeight}
-	return info, chat
+	return info, poll, chat
 }
 
 // wideBoxes calculates the places for the screens with one big box on top

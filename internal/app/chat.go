@@ -57,6 +57,16 @@ func (a *App) ReplyChat(ctx context.Context, text, replyTo string) error {
 	return session.SendReply(text, replyTo)
 }
 
+// VotePoll answers a voting of the live show with the answer of the given
+// place.
+func (a *App) VotePoll(ctx context.Context, answer int) error {
+	session, err := a.chat()
+	if err != nil {
+		return err
+	}
+	return session.Vote(answer)
+}
+
 // SendStudio writes a message to the studio of the live show.
 func (a *App) SendStudio(ctx context.Context, text string) error {
 	session, err := a.chat()
@@ -134,6 +144,21 @@ func (a *App) forwardChat(session *chat.Session) {
 					ChatID:      event.Message.ID,
 					ChatReplyTo: event.Message.ReplyTo,
 				})
+			case chat.EventPoll:
+				out := Event{Kind: EventChatPoll, PollRemoved: event.PollRemoved}
+				if poll := event.Poll; poll != nil {
+					out.Poll = &ChatPoll{
+						Question:       poll.Question,
+						Answers:        poll.Answers,
+						Results:        poll.Results,
+						PollID:         poll.PollID,
+						Secret:         poll.Secret,
+						ResultsVisible: poll.ResultsVisible,
+						Submissions:    poll.Submissions,
+						Closed:         poll.Closed,
+					}
+				}
+				a.event(out)
 			case chat.EventReaction:
 				out := Event{Kind: EventChatReaction, Reactions: chatReactions(event.Reactions), Emojis: event.Emojis}
 				if update := event.Update; update != nil {

@@ -298,6 +298,9 @@ func Run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 			ChatAvatar: func(ctx context.Context, name string) ([]byte, error) {
 				return application.ChatAvatar(ctx, name)
 			},
+			VotePoll: func(ctx context.Context, answer int) error {
+				return application.VotePoll(ctx, answer)
+			},
 			CloseChat: func() {
 				application.CloseChat()
 			},

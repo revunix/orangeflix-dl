@@ -34,7 +34,7 @@ func chatRows(t *testing.T, model *Model) []string {
 	model.View()
 	head := len(model.header(model.width))
 	body := model.height - head - len(model.footer(model.width))
-	_, box := model.liveBoxes(model.width, body)
+	_, _, box := model.liveBoxes(model.width, body)
 	panel := model.chatPanel(box)
 	rows := []string{}
 	for _, line := range panel[1 : len(panel)-1-model.composerRows()] {

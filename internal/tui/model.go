@@ -415,6 +415,8 @@ type Model struct {
 	chatToStudio bool
 	// chatComposerWidth is the width of the field at the last render.
 	chatComposerWidth int
+	// poll is the voting of the live show.
+	poll *pollAnswers
 	// chatPeople is how many are in the chat, as the server last said.
 	chatPeople string
 	spinner    spinner.Model
@@ -456,6 +458,7 @@ type Model struct {
 	reactChatFunc       func(context.Context, string, string, bool) error
 	chatReactionsFunc   func(context.Context, []string) ([]app.ChatReaction, map[string]string, error)
 	chatAvatarFunc      func(context.Context, string) ([]byte, error)
+	votePollFunc        func(context.Context, int) error
 	closeChatFunc       func()
 	setSelection        func([]string)
 	setCredentials      func(user, password string)
@@ -574,6 +577,7 @@ func NewModel(ctx context.Context, opts Options) *Model {
 		reactChatFunc:       opts.ReactChat,
 		chatReactionsFunc:   opts.ChatReactions,
 		chatAvatarFunc:      opts.ChatAvatar,
+		votePollFunc:        opts.VotePoll,
 		closeChatFunc:       opts.CloseChat,
 		runSearchCatalog:    opts.Search,
 		setSelection:        opts.SetSelection,
@@ -670,6 +674,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case AvatarMsg:
 		return m.handleAvatar(message)
+	case PollMsg:
+		return m.handlePoll(message)
 	case RunDoneMsg:
 		// Wer die Downloads verlassen hat, bleibt, wo er ist; die Meldung
 		// sagt, dass sie fertig sind.
@@ -1087,6 +1093,11 @@ func (m *Model) applyEvent(event app.Event) {
 			}
 		}
 		m.appendChatLine(line)
+	case app.EventChatPoll:
+		if m.screen != ScreenLive {
+			return
+		}
+		m.applyPoll(event.Poll, event.PollRemoved)
 	case app.EventChatReaction:
 		if m.screen != ScreenLive {
 			return

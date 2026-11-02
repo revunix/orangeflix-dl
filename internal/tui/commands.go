@@ -274,6 +274,9 @@ func (m *Model) liveHints() []keyHint {
 		list = append(list, hintLong("c", "Chat", "In den Chat schreiben", prioUseful))
 		list = append(list, hintLong("s", "Nachricht wählen", "Nachricht wählen, um zu antworten oder zu reagieren", prioUseful))
 	}
+	if m.hasPoll() && !m.poll.closed {
+		list = append(list, hintLong("1…9", "abstimmen", "Bei der Abstimmung eine Antwort wählen", prioMain))
+	}
 	if len(m.chatMessages) > 0 {
 		list = append(list, hintShow("↑↓", "Chat blättern", prioExtra))
 	}
@@ -442,6 +445,11 @@ func (m *Model) handleGlobalKey(msg tea.KeyMsg) (bool, tea.Model, tea.Cmd) {
 	if key == "." {
 		model, cmd := m.openContextMenu(false)
 		return true, model, cmd
+	}
+	// Läuft eine Abstimmung, gehören die Ziffern ihr: sie wählen eine
+	// Antwort. Der Live-Bildschirm braucht die Reiter nicht.
+	if m.screen == ScreenLive && m.hasPoll() && len(key) == 1 && key[0] >= '1' && key[0] <= '9' {
+		return false, m, nil
 	}
 	for _, tab := range m.tabs() {
 		if tab.key == key {
