@@ -697,9 +697,39 @@ func TestEpisodeStateShowsTheState(t *testing.T) {
 	if !model.episodeNew("mt419") {
 		t.Error("the episode is not marked as new")
 	}
+	model.episodes = append(model.episodes, orangeflix.Episode{
+		Identifier: "mt418", Number: 418, Title: "Folge 418", ProgressPercent: 100,
+	})
 	view := model.View()
-	if !strings.Contains(view, "geladen") {
-		t.Errorf("the view does not show the state:\n%s", view)
+	if !strings.Contains(view, "heruntergeladen") {
+		t.Errorf("the view does not show the download:\n%s", view)
+	}
+	if !strings.Contains(view, "gesehen") {
+		t.Errorf("the view does not show the watched episode:\n%s", view)
+	}
+	if strings.Contains(model.episodeState("mt418"), "heruntergeladen") {
+		t.Error("a watched episode is marked as downloaded")
+	}
+}
+
+func TestAFinishedDownloadIsMarked(t *testing.T) {
+	model := testModel()
+	model.screen = ScreenEpisodes
+	model.episodes = []orangeflix.Episode{
+		{Identifier: "mt420", Number: 420, Title: "Folge 420"},
+	}
+	updated, _ := model.Update(EventMsg{Event: app.Event{
+		Kind: app.EventDone, EpisodeID: "mt420", PID: 23, Path: "/tmp/folge.mp4",
+	}})
+	model = updated.(*Model)
+	if !model.episodeLoaded("mt420") {
+		t.Fatal("the episode is not marked as downloaded")
+	}
+	if view := model.View(); !strings.Contains(view, "heruntergeladen") {
+		t.Errorf("the view does not show the download:\n%s", view)
+	}
+	if model.known["mt420"].Path != "/tmp/folge.mp4" {
+		t.Errorf("path = %q", model.known["mt420"].Path)
 	}
 }
 

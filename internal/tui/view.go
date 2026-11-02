@@ -69,11 +69,11 @@ func (m *Model) View() string {
 	return strings.Join(lines, "\n")
 }
 
-// header builds the head line of the screen: the brand, the path, the status
-// and the clock.
+// header builds the head line of the screen: the brand, the path, the next
+// livestream, the status and the clock.
 func (m *Model) header(width int) []string {
 	clock := time.Now().Format("15:04")
-	return renderHeader(width, m.breadcrumb(), m.statusChip(), m.statusLine(), clock)
+	return renderHeader(width, m.breadcrumb(), m.statusChip(), m.statusLine(), m.nextLiveHint(time.Now()), clock)
 }
 
 // footer builds the foot line of the screen. The message of the Programm

@@ -496,7 +496,7 @@ type episodeColumns struct {
 // measureEpisodeColumns measures the table of the episodes. The length is
 // left out when the width does not carry it.
 func measureEpisodeColumns(width, indent int) episodeColumns {
-	cols := episodeColumns{num: 5, date: 10, length: 8, state: 10}
+	cols := episodeColumns{num: 5, date: 10, length: 8, state: episodeStateWidth}
 	if width < indent+cols.num+cols.date+cols.length+cols.state+4+20 {
 		cols.length = 0
 	}
@@ -556,7 +556,7 @@ func (m *Model) episodeDetail(box rect) []string {
 		bookmark = "ja"
 	}
 	lines = append(lines, detailRow("Merkliste", bookmark))
-	if episode.ProgressPercent > 0 && episode.ProgressPercent < 100 {
+	if episode.ProgressPercent > 0 {
 		lines = append(lines, detailRow("Gesehen", fmt.Sprintf("%d %%", episode.ProgressPercent)))
 	}
 	if len(episode.Participants) > 0 {
@@ -846,21 +846,49 @@ func (m *Model) episodeNew(identifier string) bool {
 	return time.Since(known.FirstSeen) < 7*24*time.Hour
 }
 
-// episodeState returns the state of an episode: geladen, the watched share,
-// neu or offen.
+// episodeStateWidth is the room of the state column. It fits
+// "✓ heruntergeladen".
+const episodeStateWidth = 18
+
+// episodeState returns the state of an episode: heruntergeladen, gesehen,
+// the watched share, neu or offen.
 func (m *Model) episodeState(identifier string) string {
 	if m.episodeLoaded(identifier) {
-		return statusBadge("geladen")
+		return statusBadge("heruntergeladen")
 	}
-	if episode, ok := m.detailEpisode(); ok && episode.Identifier == identifier {
-		if episode.ProgressPercent > 0 && episode.ProgressPercent < 100 {
-			return statusBadge(fmt.Sprintf("▶ %d %%", episode.ProgressPercent))
+	if percent := m.episodeProgress(identifier); percent > 0 {
+		if percent >= watchedPercent {
+			return statusBadge("gesehen")
 		}
+		return statusBadge(fmt.Sprintf("▶ %d %%", percent))
 	}
 	if m.episodeNew(identifier) {
 		return statusBadge("neu")
 	}
 	return statusBadge("offen")
+}
+
+// watchedPercent is the share from which a clip counts as watched. The
+// player rarely stops on the very last second.
+const watchedPercent = 90
+
+// episodeProgress returns how much of an episode was watched, from the list
+// or from the clip screen.
+func (m *Model) episodeProgress(identifier string) int {
+	if identifier == "" {
+		return 0
+	}
+	for _, episode := range m.episodes {
+		if episode.Identifier == identifier {
+			return episode.ProgressPercent
+		}
+	}
+	for _, episode := range m.clipList.episodes {
+		if episode.Identifier == identifier {
+			return episode.ProgressPercent
+		}
+	}
+	return 0
 }
 
 // episodeIdentifier returns the identifier of the marked episode.
@@ -924,7 +952,7 @@ func (m *Model) clipPanel(box rect) []string {
 
 // clipHeaderLine names the columns of the clip list.
 func (m *Model) clipHeaderLine(width int) string {
-	header := fmt.Sprintf("%-1s %-5s %-22s %-8s %s", "", "STAND", "FORMAT", "LÄNGE", "TITEL")
+	header := fmt.Sprintf("%-1s %-*s %-22s %-8s %s", "", episodeStateWidth, "STATUS", "FORMAT", "LÄNGE", "TITEL")
 	return theme.Subtle.Render(fitToWidth(header, width))
 }
 
@@ -934,12 +962,12 @@ func (m *Model) clipLine(episode orangeflix.Episode) string {
 	if episode.Bookmarked {
 		star = "★"
 	}
-	progress := "—"
-	if episode.ProgressPercent > 0 {
-		progress = fmt.Sprintf("%3d %%", episode.ProgressPercent)
+	state := m.episodeState(episode.Identifier)
+	if gap := episodeStateWidth - ansi.StringWidth(state); gap > 0 {
+		state += strings.Repeat(" ", gap)
 	}
 	line := theme.Accent.Render(star) + " " +
-		padStyled(theme.Muted, progress, 5) + " " +
+		state + " " +
 		padStyled(theme.AccentSoft, truncateColumn(episode.FormatName, 22), 22) + " " +
 		padStyled(theme.Muted, episode.Duration, 8) + " " +
 		theme.Text.Render(truncateColumn(episode.Title, 60))

@@ -175,9 +175,9 @@ func meterGradient(position int) lipgloss.Style {
 }
 
 // renderHeader returns the head line: on the left the mark and the name of
-// the brand, then the path to the current view; on the right the context
-// and the clock. A rule closes the head.
-func renderHeader(width int, title, context, status, clock string) []string {
+// the brand, then the path to the current view; on the right the next
+// livestream, the context and the clock. A rule closes the head.
+func renderHeader(width int, title, context, status, liveHint, clock string) []string {
 	if width <= 0 {
 		return []string{"", ""}
 	}
@@ -206,16 +206,74 @@ func renderHeader(width int, title, context, status, clock string) []string {
 		head += "   " + theme.Accent.Render(status)
 	}
 
-	// Rechts der Zusammenhang der Ansicht und die Uhrzeit.
-	right := ""
-	if context != "" {
-		right = theme.Muted.Render(context)
-	}
+	// Rechts der nächste Livestream, der Zusammenhang der Ansicht und die
+	// Uhrzeit. Die Uhr bleibt stehen. Der Zusammenhang weicht zuerst, der
+	// Hinweis wird gekürzt, wenn der Platz nicht reicht.
+	clockStyled := ""
 	if clock != "" {
+		clockStyled = theme.Text.Render(clock)
+	}
+	hintStyled := ""
+	if liveHint != "" {
+		hintStyled = theme.Accent.Render(liveHint)
+	}
+	contextStyled := ""
+	if context != "" {
+		contextStyled = theme.Muted.Render(context)
+	}
+	sepWidth := ansi.StringWidth(separator)
+	// Links bleiben mindestens ein paar Zeichen der Marke sichtbar.
+	budget := width - 13
+	if budget < ansi.StringWidth(clockStyled) {
+		budget = max(0, width-1)
+	}
+	remain := budget
+	if clockStyled != "" {
+		remain -= ansi.StringWidth(clockStyled)
+	}
+	if hintStyled != "" {
+		room := remain
+		if clockStyled != "" {
+			room -= sepWidth
+		}
+		if ansi.StringWidth(hintStyled) > room {
+			if room < 8 {
+				hintStyled = ""
+			} else {
+				hintStyled = fitToWidth(hintStyled, room)
+			}
+		}
+		if hintStyled != "" {
+			remain -= ansi.StringWidth(hintStyled)
+			if clockStyled != "" {
+				remain -= sepWidth
+			}
+		}
+	}
+	if contextStyled != "" {
+		room := remain
+		if hintStyled != "" || clockStyled != "" {
+			room -= sepWidth
+		}
+		if ansi.StringWidth(contextStyled) > room {
+			contextStyled = ""
+		}
+	}
+	right := ""
+	if hintStyled != "" {
+		right = hintStyled
+	}
+	if contextStyled != "" {
 		if right != "" {
 			right += separator
 		}
-		right += theme.Text.Render(clock)
+		right += contextStyled
+	}
+	if clockStyled != "" {
+		if right != "" {
+			right += separator
+		}
+		right += clockStyled
 	}
 
 	// Der linke Teil weicht, wenn der Platz nicht reicht; die Uhr bleibt.
@@ -329,8 +387,10 @@ func renderRowOn(text string, selected bool, width int, background lipgloss.Styl
 // statusBadge renders the state of an episode.
 func statusBadge(state string) string {
 	switch state {
-	case "geladen":
-		return theme.Success.Render("✓ geladen")
+	case "heruntergeladen", "geladen":
+		return theme.Success.Render("✓ heruntergeladen")
+	case "gesehen":
+		return theme.Accent.Render("✓ gesehen")
 	case "neu":
 		return theme.Warning.Render("● neu")
 	case "offen":

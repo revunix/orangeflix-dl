@@ -3,6 +3,7 @@ package tui
 import (
 	"fmt"
 	"strings"
+	"time"
 	"unicode"
 
 	"github.com/charmbracelet/x/ansi"
@@ -272,6 +273,129 @@ func playbackClock(seconds int) string {
 		return fmt.Sprintf("%d:%02d:%02d", seconds/3600, (seconds%3600)/60, seconds%60)
 	}
 	return fmt.Sprintf("%02d:%02d", seconds/60, seconds%60)
+}
+
+// nextLiveHint names the running or the next livestream for the header.
+func (m *Model) nextLiveHint(now time.Time) string {
+	if m.live != nil && m.live.IsLive {
+		title := "Livesendung"
+		if m.live.Show != nil && m.live.Show.Title != "" {
+			title = m.live.Show.Title
+		}
+		return "● LIVE · " + truncateColumn(title, 24)
+	}
+	if entry, ok := nextLiveEntry(m.calendar, now); ok {
+		if entry.Live != nil && entry.Timestamp <= now.Unix() && entry.Live.End > now.Unix() {
+			return "● LIVE · " + truncateColumn(entry.Title, 24)
+		}
+		return formatNextLive(time.Unix(entry.Timestamp, 0), now, entry.Title)
+	}
+	if m.live != nil && m.live.Scheduled != nil && m.live.Scheduled.Begin > now.Unix() {
+		return formatNextLive(time.Unix(m.live.Scheduled.Begin, 0), now, m.live.Scheduled.Title)
+	}
+	return ""
+}
+
+// nextLiveEntry returns the livestream that is on now, or the soonest one
+// that has not started. Other calendar entries are ignored.
+func nextLiveEntry(entries []orangeflix.V3CalendarEntry, now time.Time) (orangeflix.V3CalendarEntry, bool) {
+	unix := now.Unix()
+	var next *orangeflix.V3CalendarEntry
+	for index := range entries {
+		entry := &entries[index]
+		if entry.Type != "live" {
+			continue
+		}
+		if entry.Live != nil && entry.Timestamp <= unix && entry.Live.End > unix {
+			return *entry, true
+		}
+		if entry.Timestamp < unix {
+			continue
+		}
+		if next == nil || entry.Timestamp < next.Timestamp {
+			next = entry
+		}
+	}
+	if next == nil {
+		return orangeflix.V3CalendarEntry{}, false
+	}
+	return *next, true
+}
+
+// formatNextLive renders the start of a livestream relative to today.
+func formatNextLive(when, now time.Time, title string) string {
+	when = when.Local()
+	now = now.Local()
+	clock := when.Format("15:04")
+	var day string
+	switch {
+	case sameDay(when, now):
+		day = "heute " + clock
+	case sameDay(when, nextCalendarDay(now)):
+		day = "morgen " + clock
+	default:
+		day = shortWeekday(when) + " " + clock
+	}
+	return day + " · " + liveCountdown(when, now) + " · " + truncateColumn(title, 24)
+}
+
+// liveCountdown says how long it is until a livestream starts. The last ten
+// minutes count the seconds; a longer wait stays in hours and minutes.
+func liveCountdown(until, now time.Time) string {
+	rest := until.Sub(now)
+	if rest < time.Second {
+		return "gleich"
+	}
+	seconds := int(rest.Seconds())
+	if seconds < 60 {
+		return "in " + plural(int64(seconds), "Sek.", "Sek.")
+	}
+	if seconds < 10*60 {
+		minutes := seconds / 60
+		remain := seconds % 60
+		text := "in " + plural(int64(minutes), "Min.", "Min.")
+		if remain > 0 {
+			text += " " + plural(int64(remain), "Sek.", "Sek.")
+		}
+		return text
+	}
+	if seconds < 24*60*60 {
+		hours := seconds / 3600
+		minutes := (seconds % 3600) / 60
+		if hours == 0 {
+			return "in " + plural(int64(minutes), "Min.", "Min.")
+		}
+		if minutes == 0 {
+			return "in " + plural(int64(hours), "Std.", "Std.")
+		}
+		return "in " + plural(int64(hours), "Std.", "Std.") + " " + plural(int64(minutes), "Min.", "Min.")
+	}
+	days := seconds / (24 * 60 * 60)
+	hours := (seconds % (24 * 60 * 60)) / 3600
+	if hours == 0 {
+		return "in " + plural(int64(days), "Tag", "Tagen")
+	}
+	return "in " + plural(int64(days), "Tag", "Tagen") + " " + plural(int64(hours), "Std.", "Std.")
+}
+
+// sameDay reports whether the two times fall on the same local day.
+func sameDay(a, b time.Time) bool {
+	ay, am, ad := a.Date()
+	by, bm, bd := b.Date()
+	return ay == by && am == bm && ad == bd
+}
+
+// nextCalendarDay is noon on the following local date. Noon avoids the
+// repeated hour when the clocks go back.
+func nextCalendarDay(now time.Time) time.Time {
+	year, month, day := now.Date()
+	return time.Date(year, month, day+1, 12, 0, 0, 0, now.Location())
+}
+
+// shortWeekday is the German abbreviation of the weekday.
+func shortWeekday(when time.Time) string {
+	names := [...]string{"So", "Mo", "Di", "Mi", "Do", "Fr", "Sa"}
+	return names[when.Weekday()]
 }
 
 // humanDuration formats a duration in seconds.

@@ -157,7 +157,7 @@ func (m *Model) handleStartKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.screen = ScreenFormats
 		// Mit den neuen Zugangsdaten wird der Abo-Stand neu abgefragt und
 		// der Katalog neu geladen.
-		return m, tea.Batch(m.loadLibrary(), m.loadProfile(), m.loadFormats())
+		return m, tea.Batch(m.loadLibrary(), m.loadProfile(), m.loadFormats(), m.loadCalendarQuiet())
 	case "esc":
 		m.quitting = true
 		return m, tea.Quit

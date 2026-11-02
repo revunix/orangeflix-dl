@@ -34,14 +34,31 @@ func (m *Model) loadBookmarks() tea.Cmd {
 
 // loadCalendar loads the upcoming entries.
 func (m *Model) loadCalendar() tea.Cmd {
+	return m.loadCalendarInto(false)
+}
+
+// loadCalendarQuiet loads the calendar for the header without opening it
+// and without a spinner.
+func (m *Model) loadCalendarQuiet() tea.Cmd {
+	return m.loadCalendarInto(true)
+}
+
+// loadCalendarInto loads the upcoming entries. Quiet keeps the current screen.
+func (m *Model) loadCalendarInto(quiet bool) tea.Cmd {
 	if m.calendarFunc == nil {
 		return nil
 	}
-	m.loading = true
-	m.loadingLabel = "Lade den Kalender …"
+	if !quiet {
+		m.loading = true
+		m.loadingLabel = "Lade den Kalender …"
+	}
+	limit := 100
+	if quiet {
+		limit = 20
+	}
 	return func() tea.Msg {
-		entries, err := m.calendarFunc(m.ctx, 100)
-		return CalendarMsg{Entries: entries, Err: err}
+		entries, err := m.calendarFunc(m.ctx, limit)
+		return CalendarMsg{Entries: entries, Err: err, Background: quiet}
 	}
 }
 

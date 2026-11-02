@@ -80,10 +80,12 @@ type (
 		On         bool
 		Err        error
 	}
-	// CalendarMsg carries the upcoming calendar entries.
+	// CalendarMsg carries the upcoming calendar entries. Background is set
+	// when the load only feeds the header and must not open the calendar.
 	CalendarMsg struct {
-		Entries []orangeflix.V3CalendarEntry
-		Err     error
+		Entries    []orangeflix.V3CalendarEntry
+		Err        error
+		Background bool
 	}
 	// LiveMsg carries the live state.
 	LiveMsg struct {
@@ -525,7 +527,7 @@ func NewModel(ctx context.Context, opts Options) *Model {
 // Init starts the program. Die Daten werden sofort geladen, damit sie
 // fertig da sind, wenn der Startbildschirm vorbei ist.
 func (m *Model) Init() tea.Cmd {
-	return tea.Batch(m.spinner.Tick, m.splashTimer(), m.loadLibrary(), m.loadFormats(), m.loadProfile(), m.loadAnnouncements())
+	return tea.Batch(m.spinner.Tick, m.splashTimer(), m.loadLibrary(), m.loadFormats(), m.loadProfile(), m.loadAnnouncements(), m.loadCalendarQuiet())
 }
 
 // splashDuration is how long the intro screen runs before it moves on.
@@ -570,7 +572,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				// Die Daten sind schon geladen, sie werden nur noch
 				// einmal aufgefrischt, falls der Start länger gedauert hat.
 				m.screen = ScreenFormats
-				return m, tea.Batch(m.loadLibrary(), m.loadFormats(), m.loadProfile())
+				return m, tea.Batch(m.loadLibrary(), m.loadFormats(), m.loadProfile(), m.loadCalendarQuiet())
 			}
 			m.screen = ScreenStart
 		}
@@ -738,6 +740,12 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.isError = false
 		return m, nil
 	case CalendarMsg:
+		if message.Background {
+			if message.Err == nil {
+				m.calendar = message.Entries
+			}
+			return m, nil
+		}
 		m.loading = false
 		if message.Err != nil {
 			m.message = message.Err.Error()
@@ -918,6 +926,7 @@ func (m *Model) applyEvent(event app.Event) {
 				m.jobs[i].Done = m.jobs[i].Total
 			}
 		}
+		m.markEpisodeDownloaded(event.PID, event.EpisodeID, event.Path)
 	case app.EventFailed:
 		m.summary.failed++
 		m.message = event.Message
@@ -1130,6 +1139,38 @@ func (m *Model) tailLog(count int) []string {
 		return m.log
 	}
 	return m.log[len(m.log)-count:]
+}
+
+// markEpisodeDownloaded remembers that an episode was just downloaded, so
+// the list can mark it before the library is read again.
+func (m *Model) markEpisodeDownloaded(pid int, identifier, path string) {
+	if identifier == "" {
+		return
+	}
+	if m.known == nil {
+		m.known = map[string]store.KnownEpisode{}
+	}
+	known, exists := m.known[identifier]
+	already := exists && known.DownloadedAt != nil
+	now := time.Now()
+	known.Identifier = identifier
+	known.DownloadedAt = &now
+	if path != "" {
+		known.Path = path
+	}
+	m.known[identifier] = known
+	if already || pid == 0 {
+		return
+	}
+	counts := m.knownCounts[pid]
+	counts.loaded++
+	if !exists {
+		counts.total++
+	}
+	if m.knownCounts == nil {
+		m.knownCounts = map[int]episodeCounts{}
+	}
+	m.knownCounts[pid] = counts
 }
 
 // setKnown stores the episodes of the library of one format.
