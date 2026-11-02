@@ -1,16 +1,16 @@
 {
-    "version": "1.1.2",
+    "version": "1.1.3",
     "description": "Hilfswerkzeug zur lokalen Archivierung der Orangeflix-Folgen",
     "homepage": "https://github.com/revunix/orangeflix-dl",
     "license": "MIT",
     "architecture": {
         "64bit": {
-            "url": "https://github.com/revunix/orangeflix-dl/releases/download/v1.1.2/orangeflix-dl_v1.1.2_windows_amd64.zip",
-            "hash": "e8b964e49151564ceebe4c01022ad3a71a5e28db67d14ddad12a52afd5374110"
+            "url": "https://github.com/revunix/orangeflix-dl/releases/download/v1.1.3/orangeflix-dl_v1.1.3_windows_amd64.zip",
+            "hash": "81f5bea27982e88b5e8942cc629f4a0a304a7f2e762844b54785c82adb23884a"
         },
         "arm64": {
-            "url": "https://github.com/revunix/orangeflix-dl/releases/download/v1.1.2/orangeflix-dl_v1.1.2_windows_arm64.zip",
-            "hash": "b0390909fda48e5f4394476ebc2a8c46b3a1637402ef5938d07abc80ea138863"
+            "url": "https://github.com/revunix/orangeflix-dl/releases/download/v1.1.3/orangeflix-dl_v1.1.3_windows_arm64.zip",
+            "hash": "f218d384b26e9fe8bf794f58f9add77b3d2e7a6c904cb251c9c42e7774d23e3f"
         }
     },
     "bin": "orangeflix-dl.exe",
