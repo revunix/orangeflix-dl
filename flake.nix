@@ -5,13 +5,13 @@
 
   outputs = { self, nixpkgs }:
     let
-      version = "1.1.3";
+      version = "1.2.0";
       repo = "revunix/orangeflix-dl";
       systems = {
-        x86_64-linux = { os = "linux"; arch = "amd64"; hash = "sha256-Rgklq1Bw814w2ADytyBy7jZS8Kp/0Amd8QBuIA+hwpM="; };
-        aarch64-linux = { os = "linux"; arch = "arm64"; hash = "sha256-u2jvQyCnEFYD5jYHZ8Dk91H1Il4worT5Lmpwd40bogg="; };
-        x86_64-darwin = { os = "darwin"; arch = "amd64"; hash = "sha256-zHjXfwCsEszseJPk+vIfyrFVCLclkY8mma5OnccEWkI="; };
-        aarch64-darwin = { os = "darwin"; arch = "arm64"; hash = "sha256-ZEJpeB4diFK5nv0bPFrVWiHWC4CchAE6yn+IGRYPOaM="; };
+        x86_64-linux = { os = "linux"; arch = "amd64"; hash = "sha256-G5bsQbnVjql60IPJJEFFnd7vvdeuSArTnI7BKgIq4iA="; };
+        aarch64-linux = { os = "linux"; arch = "arm64"; hash = "sha256-5IhdHv0woyv2UWkcziH12lke975NalAfN63IlwSKj6w="; };
+        x86_64-darwin = { os = "darwin"; arch = "amd64"; hash = "sha256-zsou0UmC3cecOuLulJ5c0rgukAiYuk6G8MtP9Lk29oE="; };
+        aarch64-darwin = { os = "darwin"; arch = "arm64"; hash = "sha256-pMRbNtoZ18kNqmIP8FD0hhpwZiBVP7gJ+TKFZpzuztY="; };
       };
       each = nixpkgs.lib.genAttrs (builtins.attrNames systems);
     in
