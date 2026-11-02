@@ -1,12 +1,12 @@
 class OrangeflixDl < Formula
   REPO = "revunix/orangeflix-dl".freeze
   # Rückfall, wenn das neueste Release nicht abgefragt werden kann.
-  PINNED_TAG = "v1.3.0".freeze
+  PINNED_TAG = "v1.4.0".freeze
   PINNED_SUMS = {
-    ["darwin", "arm64"] => "24a1763ace8524b841d364f121a1f20beb55b01f8b868860fd524b5d5970e866",
-    ["darwin", "amd64"] => "be04fedbb3c8a03f4013c97f23489720b6a112051eed67fc04da2edf16c865cd",
-    ["linux", "arm64"]  => "0b78c9836cc2d27d930b4b60ae7e01158eb66adb3a703d806f3e0c8331bbf729",
-    ["linux", "amd64"]  => "481e3fbd8837f7e08fc259a690f7233391209d7a13d80f0c9a6c368d84a804ca",
+    ["darwin", "arm64"] => "64fa63031316fe9af0916f243714fcf0da7c5c3816393e57092ca7688d8a90ae",
+    ["darwin", "amd64"] => "f7fa63848d3da22df80c6c38313a45aa5d0d5225b6f503370ce142be1db554bd",
+    ["linux", "arm64"]  => "238867215ae14b0cdaec0ceacddfe36cb8d2296f219898e909c0210374a36201",
+    ["linux", "amd64"]  => "21f2199bc708eb150efa2c4c7e63bc21367d8ecb14e1ffa0c5ddf3e02a5e54ee",
   }.freeze
 
   # Liest die checksums.txt des neuesten Releases. Die Prüfsummen bleiben
