@@ -324,8 +324,9 @@ func nextLiveEntry(entries []orangeflix.V3CalendarEntry, now time.Time) (orangef
 
 // formatNextLive renders the start of a livestream relative to today.
 func formatNextLive(when, now time.Time, title string) string {
-	when = when.Local()
-	now = now.Local()
+	// Die Uhrzeit bleibt in der Zeitzone, die der Aufrufer mitgibt. Ein
+	// Wechsel auf die Zeitzone der Maschine würde „morgen“ auf einem
+	// UTC-Rechner verschieben.
 	clock := when.Format("15:04")
 	var day string
 	switch {
