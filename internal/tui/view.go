@@ -406,14 +406,24 @@ func (m *Model) render(screen []screenRow, width int) []string {
 	return rows
 }
 
-// liveBoxes puts the stream information above the live chat.
+// liveBoxes places the chat and the stream information. On a wide terminal
+// the chat takes the left two thirds over the whole height and the
+// information stands beside it on the right; on a narrow one the
+// information stands small above the chat.
 func (m *Model) liveBoxes(width, height int) (info, chat rect) {
 	inner := width - 2*margin
 	available := height - 2*margin
-	infoHeight := max(7, min(11, available/3))
+	if width >= twoColumnWidth {
+		infoWidth := max(30, min(44, inner*32/100))
+		chatWidth := inner - gap - infoWidth
+		chat = rect{x: margin, y: margin, width: chatWidth, height: available}
+		info = rect{x: margin + chatWidth + gap, y: margin, width: infoWidth, height: available}
+		return info, chat
+	}
+	infoHeight := max(6, min(9, available/4))
 	chatHeight := available - infoHeight - gap
-	if chatHeight < 5 {
-		infoHeight = max(5, available/2)
+	if chatHeight < 8 {
+		infoHeight = max(5, available/3)
 		chatHeight = max(3, available-infoHeight-gap)
 	}
 	info = rect{x: margin, y: margin, width: inner, height: infoHeight}

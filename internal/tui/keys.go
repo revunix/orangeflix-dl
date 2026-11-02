@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"time"
 
 	"github.com/atotto/clipboard"
 	tea "github.com/charmbracelet/bubbletea"
@@ -22,6 +23,18 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if msg.Type == tea.KeyCtrlC {
 		m.quitting = true
 		return m, tea.Quit
+	}
+	// Zerschnittene Mausmeldungen des Terminals sind kein Text: sie dürfen
+	// in kein Feld geraten. Die Drehungen des Rads darin blättern weiter.
+	if wheel, stray := strayMouse(msg, m.sinceMouse()); stray {
+		// Auch ein Bruchstück zählt als Mausereignis: das nächste Stück
+		// derselben Meldung folgt gleich.
+		m.lastMouse = time.Now()
+		var cmd tea.Cmd
+		for _, key := range wheel {
+			_, cmd = m.wheel(key)
+		}
+		return m, cmd
 	}
 	if m.confirm != nil {
 		return m.handleConfirmKey(msg)
@@ -898,7 +911,36 @@ func (m *Model) handleCalendarKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 // handleLiveKey processes the keys of the live screen.
 func (m *Model) handleLiveKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	// Ist eine Nachricht gewählt, gehören die Pfeile und enter ihr.
+	if m.chatSelectedID != "" {
+		switch msg.String() {
+		case "up", "k":
+			m.moveChatSelect(-1)
+			return m, nil
+		case "down", "j":
+			m.moveChatSelect(1)
+			return m, nil
+		case "enter":
+			return m.openContextMenu(false)
+		case "a":
+			if line, ok := m.selectedChat(); ok {
+				return m.startReply(*line)
+			}
+			return m, nil
+		case "y":
+			if line, ok := m.selectedChat(); ok {
+				m.copyText(line.text)
+			}
+			return m, nil
+		case "esc", "s":
+			m.chatSelectedID = ""
+			return m, nil
+		}
+	}
 	switch msg.String() {
+	case "s":
+		m.startChatSelect()
+		return m, nil
 	case "enter", "w":
 		if m.live != nil && m.live.IsLive && m.live.HasAccess() {
 			return m.playLive("live")
@@ -921,14 +963,8 @@ func (m *Model) handleLiveKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		m.chatFocused = true
 		return m, m.chatInput.Focus()
-	case "up", "k":
-		if m.chatScroll < len(m.chatMessages) {
-			m.chatScroll++
-		}
-	case "down", "j":
-		if m.chatScroll > 0 {
-			m.chatScroll--
-		}
+	case "up", "k", "down", "j", "pgup", "pgdown", "home", "end":
+		m.scrollChat(msg.String())
 	case "R":
 		return m, m.loadLive()
 	case "esc":
@@ -955,17 +991,27 @@ func (m *Model) handleChatKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "enter":
 		return m.sendChat()
 	case "esc":
+		// esc bricht erst die Antwort ab, dann verlässt es das Feld.
+		if m.chatReplyTo != nil {
+			m.chatReplyTo = nil
+			return m, nil
+		}
 		m.chatFocused = false
 		m.chatInput.Blur()
 		return m, nil
-	case "up", "pgup":
-		if m.chatScroll < len(m.chatMessages) {
-			m.chatScroll++
+	case "up", "down", "pgup", "pgdown":
+		m.scrollChat(msg.String())
+		return m, nil
+	case "tab":
+		// tab wechselt zwischen dem Chat und dem Studio.
+		if m.sendStudioFunc != nil && m.chatReplyTo == nil {
+			m.chatToStudio = !m.chatToStudio
 		}
 		return m, nil
-	case "down", "pgdown":
-		if m.chatScroll > 0 {
-			m.chatScroll--
+	}
+	if key := msg.String(); strings.HasPrefix(key, "alt+") && len(key) == 5 && key[4] >= '1' && key[4] <= '9' {
+		if index := int(key[4] - '1'); index < len(quickEmojis) {
+			m.insertEmoji(quickEmojis[index])
 		}
 		return m, nil
 	}
@@ -1224,4 +1270,25 @@ func folderOf(path string) string {
 		return "."
 	}
 	return path[:index]
+}
+
+// scrollChat moves through the chat. The offset counts lines from the end
+// and stops where the oldest line stands at the top of the window.
+func (m *Model) scrollChat(key string) {
+	page := max(1, m.chatPage-1)
+	switch key {
+	case "up", "k":
+		m.chatScroll++
+	case "down", "j":
+		m.chatScroll--
+	case "pgup":
+		m.chatScroll += page
+	case "pgdown":
+		m.chatScroll -= page
+	case "home":
+		m.chatScroll = m.chatMaxScroll
+	case "end":
+		m.chatScroll = 0
+	}
+	m.chatScroll = max(0, min(m.chatScroll, m.chatMaxScroll))
 }

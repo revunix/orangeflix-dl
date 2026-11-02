@@ -67,6 +67,8 @@ func (m *Model) contextItems() (string, []menuItem) {
 		}
 		items = append(items, menuItem{label: "Titel kopieren", key: "y", run: m.keyRun("y")})
 		return entry.Title, items
+	case ScreenLive:
+		return m.chatMenu()
 	case ScreenAnnouncements:
 		if m.announceCursor < 0 || m.announceCursor >= len(m.announcements) {
 			return "", nil

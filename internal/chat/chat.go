@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"html"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -30,6 +31,9 @@ const (
 	EventStatus
 	// EventError reports a chat failure.
 	EventError
+	// EventReaction carries reactions: the state of the history or one
+	// change.
+	EventReaction
 )
 
 // Message is one line of the live chat.
@@ -50,6 +54,11 @@ type Event struct {
 	Message Message
 	Status  string
 	Err     error
+	// Reactions is the state of messages, Update one change; Emojis names
+	// reactions the client does not know yet.
+	Reactions []ReactionState
+	Update    *ReactionUpdate
+	Emojis    map[string]string
 }
 
 // Session is one connection to the live chat.
@@ -69,6 +78,9 @@ func Open(ctx context.Context, baseURL, namespace, jwt, username string) (*Sessi
 		socketio.WithRawURL(baseURL),
 		socketio.WithDefaultNamespace(namespace),
 		socketio.WithConnectTimeout(15*time.Second),
+		// Die Bibliothek schreibt sonst jedes Paket über das Standard-log
+		// ins Terminal, mitten in die Oberfläche.
+		socketio.WithLogger(quietLogger{}),
 	)
 	if err != nil {
 		return nil, err
@@ -89,11 +101,27 @@ func Open(ctx context.Context, baseURL, namespace, jwt, username string) (*Sessi
 		if err := json.Unmarshal(data, &messages); err != nil {
 			return
 		}
+		ids := []string{}
 		for _, message := range messages {
 			if message.To == "HOST" {
 				continue
 			}
 			session.send(Event{Kind: EventMessage, Message: message.message(username)})
+			if message.ID != "" {
+				ids = append(ids, message.ID)
+			}
+		}
+		// Die Reaktionen der Vorgeschichte stehen nicht in den Nachrichten.
+		go session.fetchReactions(ids)
+	})
+	client.On("metadata", func(data json.RawMessage) {
+		if update, ok := parseMetadataEvent(data, username); ok {
+			session.send(Event{Kind: EventReaction, Update: &update})
+		}
+	})
+	client.On("pinnedmsg", func(data json.RawMessage) {
+		if text := pinnedText(data); text != "" {
+			session.send(Event{Kind: EventMessage, Message: Message{From: "Angeheftet", Text: text, Admin: true, Time: time.Now()}})
 		}
 	})
 	client.On("userlist", func(data json.RawMessage) {
@@ -146,17 +174,7 @@ func (s *Session) Done() <-chan struct{} { return s.done }
 
 // Send writes a message to the main room.
 func (s *Session) Send(text string) error {
-	text = strings.TrimSpace(text)
-	if text == "" {
-		return errors.New("empty chat message")
-	}
-	if len([]rune(text)) > 500 {
-		return errors.New("the chat message is too long")
-	}
-	return s.client.Emit("message", map[string]any{
-		"to":  "mainroom",
-		"txt": text,
-	})
+	return s.SendReply(text, "")
 }
 
 // Close disconnects the chat.
@@ -182,7 +200,7 @@ func (s *Session) send(event Event) {
 	}
 	// A status can be missed. A message takes the place of the oldest
 	// event, so a full queue does not swallow the chat.
-	if event.Kind != EventMessage {
+	if event.Kind != EventMessage && event.Kind != EventReaction {
 		return
 	}
 	select {
@@ -211,7 +229,7 @@ func (w wireMessage) message(username string) Message {
 	return Message{
 		ID:      w.ID,
 		From:    w.From,
-		Text:    html.UnescapeString(w.Text),
+		Text:    cleanText(w.Text),
 		To:      w.To,
 		ReplyTo: w.ReplyTo,
 		Time:    parseTime(w.Time),
@@ -240,4 +258,60 @@ func parseTime(raw json.RawMessage) time.Time {
 		return time.Unix(number, 0)
 	}
 	return time.Time{}
+}
+
+// quietLogger drops the diagnostics of the Socket.IO library. Failures that
+// matter reach the session as errors of Connect, Emit and the disconnect.
+type quietLogger struct{}
+
+func (quietLogger) Debugf(string, ...any) {}
+func (quietLogger) Infof(string, ...any)  {}
+func (quietLogger) Warnf(string, ...any)  {}
+func (quietLogger) Errorf(string, ...any) {}
+
+var (
+	// breakTag is a line break of the web chat.
+	breakTag = regexp.MustCompile(`(?i)<br\s*/?>`)
+	// markupTag is any other tag of the web chat; the text between the tags
+	// stays.
+	markupTag = regexp.MustCompile(`</?[a-zA-Z][^<>]*>`)
+)
+
+// cleanText turns the HTML of a chat message into plain text. The tags are
+// taken out before the entities are decoded: what a user typed arrives
+// escaped ("&lt;3") and must stay. A line break that was escaped twice is
+// caught after decoding.
+func cleanText(raw string) string {
+	text := breakTag.ReplaceAllString(raw, " ")
+	text = markupTag.ReplaceAllString(text, "")
+	text = html.UnescapeString(text)
+	text = breakTag.ReplaceAllString(text, " ")
+	return strings.Join(strings.Fields(text), " ")
+}
+
+// pinnedText reads the pinned message. The server sends it as a message
+// object or as a plain text; an empty answer means nothing is pinned.
+func pinnedText(raw json.RawMessage) string {
+	var text string
+	if err := json.Unmarshal(raw, &text); err == nil {
+		return cleanText(text)
+	}
+	var object struct {
+		Text    string `json:"text"`
+		Txt     string `json:"txt"`
+		Msg     string `json:"msg"`
+		Message string `json:"message"`
+	}
+	if err := json.Unmarshal(raw, &object); err == nil {
+		for _, candidate := range []string{object.Text, object.Txt, object.Msg, object.Message} {
+			if candidate != "" {
+				return cleanText(candidate)
+			}
+		}
+	}
+	var list []json.RawMessage
+	if err := json.Unmarshal(raw, &list); err == nil && len(list) > 0 {
+		return pinnedText(list[0])
+	}
+	return ""
 }

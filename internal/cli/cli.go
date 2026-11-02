@@ -283,6 +283,21 @@ func Run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 			SendChat: func(ctx context.Context, text string) error {
 				return application.SendChat(ctx, text)
 			},
+			SendStudio: func(ctx context.Context, text string) error {
+				return application.SendStudio(ctx, text)
+			},
+			ReplyChat: func(ctx context.Context, text, replyTo string) error {
+				return application.ReplyChat(ctx, text, replyTo)
+			},
+			ReactChat: func(ctx context.Context, messageID, emoji string, active bool) error {
+				return application.ReactChat(ctx, messageID, emoji, active)
+			},
+			ChatReactions: func(ctx context.Context, messageIDs []string) ([]app.ChatReaction, map[string]string, error) {
+				return application.ChatReactions(ctx, messageIDs)
+			},
+			ChatAvatar: func(ctx context.Context, name string) ([]byte, error) {
+				return application.ChatAvatar(ctx, name)
+			},
 			CloseChat: func() {
 				application.CloseChat()
 			},

@@ -78,6 +78,7 @@ func (m *Model) pick(cursor *int, index int, activate string) clickFunc {
 // handleMouse answers the mouse: the wheel moves through the list or the
 // window under it, a click runs the zone under the pointer.
 func (m *Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
+	m.lastMouse = time.Now()
 	m.hoverX, m.hoverY = msg.X, msg.Y
 	if msg.Action == tea.MouseActionMotion {
 		// Die Bewegung wählt in Fenstern den Eintrag unter dem Zeiger; das
@@ -179,6 +180,13 @@ func (m *Model) wheel(key string) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	if m.screen == ScreenStart && !m.windowOpen() {
+		return m, nil
+	}
+	// Im Chat blättert eine Raste drei Zeilen, wie in anderen Programmen.
+	if m.screen == ScreenLive && !m.windowOpen() {
+		for step := 0; step < 3; step++ {
+			m.scrollChat(key)
+		}
 		return m, nil
 	}
 	return m.pressKey(key)

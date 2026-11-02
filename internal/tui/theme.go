@@ -73,7 +73,29 @@ var (
 	colorWarning = lipgloss.AdaptiveColor{Light: "#9a5b00", Dark: "#fdba74"}
 	// colorDanger is the color of the failed state.
 	colorDanger = lipgloss.AdaptiveColor{Light: "#b91c1c", Dark: "#fecaca"}
+	// The bubbles of the chat: the messages of others on a quiet surface,
+	// the own ones warm like the brand, the chosen one a step stronger.
+	colorBubble       = lipgloss.AdaptiveColor{Light: "#f1f1f4", Dark: "#1f1f23"}
+	colorBubbleSelf   = lipgloss.AdaptiveColor{Light: "#ffe7c2", Dark: "#3a2a12"}
+	colorBubbleChosen = lipgloss.AdaptiveColor{Light: "#fdc98a", Dark: "#5a3d14"}
+	// colorReaction is the chip of a reaction below a bubble.
+	colorReaction = lipgloss.AdaptiveColor{Light: "#e4e4e7", Dark: "#2c2c31"}
+	// colorReactionMine is the chip of a reaction of the account.
+	colorReactionMine = lipgloss.AdaptiveColor{Light: "#ffd8a8", Dark: "#4a3415"}
 )
+
+// chatNameColors tell the senders of the chat apart, like the names in a
+// group of a messenger.
+var chatNameColors = []lipgloss.AdaptiveColor{
+	{Light: "#0369a1", Dark: "#7dd3fc"},
+	{Light: "#15803d", Dark: "#86efac"},
+	{Light: "#b91c1c", Dark: "#fca5a5"},
+	{Light: "#6d28d9", Dark: "#c4b5fd"},
+	{Light: "#a16207", Dark: "#fcd34d"},
+	{Light: "#be185d", Dark: "#f9a8d4"},
+	{Light: "#0f766e", Dark: "#5eead4"},
+	{Light: "#c2410c", Dark: "#fdba74"},
+}
 
 // The gradient of the program name. It uses the brand gradient of the site.
 const (
@@ -153,6 +175,13 @@ type themeStyles struct {
 	Row lipgloss.Style
 	// RowActive is the color of the marked line of a list.
 	RowActive lipgloss.Style
+	// Bubble, BubbleSelf and BubbleChosen are the surfaces of the chat
+	// bubbles; Reaction and ReactionMine the chips of the reactions.
+	Bubble       lipgloss.Style
+	BubbleSelf   lipgloss.Style
+	BubbleChosen lipgloss.Style
+	Reaction     lipgloss.Style
+	ReactionMine lipgloss.Style
 }
 
 // theme holds the styles of the active color scheme.
@@ -220,6 +249,11 @@ func newTheme(name Theme) themeStyles {
 		BorderStrong: lipgloss.NewStyle().Foreground(colorOf(colorBorderStrong)),
 		Row:          lipgloss.NewStyle().Foreground(colorOf(colorText)),
 		RowActive:    lipgloss.NewStyle().Foreground(colorOf(colorAccent)).Bold(true),
+		Bubble:       lipgloss.NewStyle().Background(colorOf(colorBubble)),
+		BubbleSelf:   lipgloss.NewStyle().Background(colorOf(colorBubbleSelf)),
+		BubbleChosen: lipgloss.NewStyle().Background(colorOf(colorBubbleChosen)),
+		Reaction:     lipgloss.NewStyle().Background(colorOf(colorReaction)),
+		ReactionMine: lipgloss.NewStyle().Background(colorOf(colorReactionMine)),
 	}
 }
 

@@ -1492,7 +1492,7 @@ func TestChatMessagesAppear(t *testing.T) {
 	model.chatConnected = true
 	model.applyEvent(app.Event{Kind: app.EventChat, Label: "Gast", Message: "Hallo Chat", Done: time.Now().Unix()})
 	view := model.View()
-	if !strings.Contains(view, "Live-Chat") || !strings.Contains(view, "Hallo Chat") {
+	if !strings.Contains(view, "╭─ Chat ") || !strings.Contains(view, "Hallo Chat") {
 		t.Errorf("the chat message is not visible:\n%s", view)
 	}
 }

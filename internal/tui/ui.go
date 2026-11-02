@@ -2,6 +2,8 @@ package tui
 
 import (
 	"context"
+	"io"
+	"log"
 	"os"
 	"strings"
 
@@ -73,6 +75,16 @@ type Options struct {
 	OpenChat func(context.Context) error
 	// SendChat writes a message to the live chat.
 	SendChat func(context.Context, string) error
+	// SendStudio writes a message to the studio of the show.
+	SendStudio func(context.Context, string) error
+	// ReplyChat writes a message that answers another one.
+	ReplyChat func(context.Context, string, string) error
+	// ReactChat sets or removes a reaction on a chat message.
+	ReactChat func(context.Context, string, string, bool) error
+	// ChatReactions reads the reactions of chat messages.
+	ChatReactions func(context.Context, []string) ([]app.ChatReaction, map[string]string, error)
+	// ChatAvatar loads the picture of a chat user.
+	ChatAvatar func(context.Context, string) ([]byte, error)
 	// CloseChat disconnects the live chat.
 	CloseChat func()
 	// Similar loads clips related to an episode.
@@ -106,11 +118,18 @@ func NewUI(opts Options) *UI {
 	if ctx == nil {
 		ctx = context.Background()
 	}
+	// Die Avatare lassen sich abschalten, etwa bei langsamer Verbindung.
+	if !switchedOn(os.Getenv("ORANGEFLIX_AVATARS")) {
+		opts.ChatAvatar = nil
+	}
 	model := NewModel(ctx, opts)
+	// Solange die Oberfläche den Bildschirm hat, darf keine Bibliothek über
+	// das Standard-log hineinschreiben: jede Zeile zerreißt das Bild.
+	log.SetOutput(io.Discard)
 	programOptions := []tea.ProgramOption{tea.WithAltScreen()}
 	// Die Maus lässt sich abschalten: solange das Programm sie liest,
 	// markiert das Terminal Text nur mit gedrückter Umschalttaste.
-	if mouseEnabled(os.Getenv("ORANGEFLIX_MOUSE")) {
+	if switchedOn(os.Getenv("ORANGEFLIX_MOUSE")) {
 		// Alle Bewegungen, auch ohne gedrückte Taste: sonst gäbe es kein
 		// Hervorheben unter dem Zeiger.
 		programOptions = append(programOptions, tea.WithMouseAllMotion())
@@ -120,9 +139,10 @@ func NewUI(opts Options) *UI {
 	return &UI{model: model, program: program}
 }
 
-// mouseEnabled reads ORANGEFLIX_MOUSE: "0", "off", "no" and "false" turn
-// the mouse off, everything else keeps it on.
-func mouseEnabled(value string) bool {
+// switchedOn reads a switch like ORANGEFLIX_MOUSE or ORANGEFLIX_AVATARS:
+// "0", "off", "no", "false", "aus" and "nein" turn it off, everything else
+// keeps it on.
+func switchedOn(value string) bool {
 	switch strings.ToLower(strings.TrimSpace(value)) {
 	case "0", "off", "no", "false", "aus", "nein":
 		return false

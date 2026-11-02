@@ -49,8 +49,31 @@ func (m *Model) hints() []keyHint {
 			hintShow("↑↓", "wählen", prioUseful), hint("tab", "öffnen", prioMain), hint("shift+tab", "hoch", prioUseful),
 			hint("ctrl+v", "einfügen", prioExtra), hint("enter", "übernehmen", prioAlways), hint("esc", "abbrechen", prioAlways),
 		}
+	case m.screen == ScreenLive && m.chatFocused && m.chatReplyTo != nil:
+		return []keyHint{hint("enter", "antworten", prioAlways), hintLong("esc", "Antwort abbrechen", "Antwort abbrechen", prioAlways), hintShow("↑↓", "blättern", prioUseful)}
 	case m.screen == ScreenLive && m.chatFocused:
-		return []keyHint{hint("enter", "senden", prioAlways), hintLong("esc", "Eingabe verlassen", "Chat-Eingabe verlassen", prioAlways), hintShow("↑↓", "blättern", prioUseful)}
+		list := []keyHint{hint("enter", "senden", prioAlways), hintLong("esc", "Eingabe verlassen", "Chat-Eingabe verlassen", prioAlways)}
+		if m.sendStudioFunc != nil {
+			if m.chatToStudio {
+				list = append(list, hintLong("tab", "an den Chat", "An den Chat schreiben", prioMain))
+			} else {
+				list = append(list, hintLong("tab", "ans Studio", "An das Studio schreiben", prioMain))
+			}
+		}
+		return append(list, hintShow("alt+1…9", "Emoji", prioUseful), hintShow("↑↓", "blättern", prioExtra))
+	case m.screen == ScreenLive && m.chatSelectedID != "":
+		list := []keyHint{hintShow("↑↓", "Nachricht wählen", prioMain)}
+		if m.chatInteractive() {
+			list = append(list,
+				hintLong("a", "antworten", "Auf die Nachricht antworten", prioMain),
+				hintLong("enter", "Reaktionen", "Menü der Nachricht mit den Reaktionen", prioMain),
+			)
+		}
+		return append(list,
+			hintLong("y", "kopieren", "Text der Nachricht kopieren", prioExtra),
+			hintLong("esc", "fertig", "Nachricht abwählen", prioAlways),
+			hintLong("?", "Hilfe", "Alle Tasten anzeigen", prioAlways),
+		)
 	case m.screen == ScreenFormats && m.filtering:
 		return []keyHint{hint("enter", "übernehmen", prioAlways), hint("esc", "verwerfen", prioAlways)}
 	case m.screen == ScreenEpisodes && m.yearFiltering:
@@ -249,9 +272,13 @@ func (m *Model) liveHints() []keyHint {
 	}
 	if m.chatConnected {
 		list = append(list, hintLong("c", "Chat", "In den Chat schreiben", prioUseful))
+		list = append(list, hintLong("s", "Nachricht wählen", "Nachricht wählen, um zu antworten oder zu reagieren", prioUseful))
 	}
 	if len(m.chatMessages) > 0 {
 		list = append(list, hintShow("↑↓", "Chat blättern", prioExtra))
+	}
+	if m.chatScroll > 0 {
+		list = append(list, hintLong("end", "neueste", "Chat ans Ende springen", prioMain))
 	}
 	return append(list,
 		hintLong("R", "neu laden", "Live-Stand neu laden", prioExtra),

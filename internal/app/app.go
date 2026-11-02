@@ -38,6 +38,8 @@ const (
 	EventChat
 	// EventChatStatus reports a state of the live chat.
 	EventChatStatus
+	// EventChatReaction carries reactions of chat messages.
+	EventChatReaction
 )
 
 // Event is one user visible state change.
@@ -58,6 +60,33 @@ type Event struct {
 	EpisodeID string
 	// PID names the format of the episode.
 	PID int
+	// ChatID is the id of a chat message, ChatReplyTo the id of the
+	// message it answers.
+	ChatID      string
+	ChatReplyTo string
+	// Reactions is the state of chat messages, Reaction one change of it;
+	// Emojis names reactions the interface does not know yet.
+	Reactions []ChatReaction
+	Reaction  *ChatReactionChange
+	Emojis    map[string]string
+}
+
+// ChatReaction is the reactions of one chat message.
+type ChatReaction struct {
+	MessageID string
+	Cursor    string
+	Counts    map[string]int
+	Mine      []string
+}
+
+// ChatReactionChange is one change of a reaction.
+type ChatReactionChange struct {
+	MessageID string
+	Cursor    string
+	Emoji     string
+	Count     int
+	Active    bool
+	Self      bool
 }
 
 // UI is the front end the app talks to.

@@ -9,6 +9,7 @@ import (
 
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/revunix/orangeflix-dl/internal/app"
@@ -1139,9 +1140,21 @@ func (m *Model) calendarLine(entry orangeflix.V3CalendarEntry) string {
 	return line
 }
 
-// livePanel renders the live state.
+// livePanel renders the live state. The box stands as a narrow column
+// beside the chat, so every text wraps instead of being cut.
 func (m *Model) livePanel(box rect) []string {
+	width := box.innerWidth()
 	lines := []string{}
+	add := func(style lipgloss.Style, text string) {
+		for _, part := range wrapText(text, width) {
+			lines = append(lines, style.Render(part))
+		}
+	}
+	gapLine := func() {
+		if len(lines) > 0 && lines[len(lines)-1] != "" {
+			lines = append(lines, "")
+		}
+	}
 	if m.liveLoading || (m.live == nil && m.loading) {
 		lines = append(lines, theme.Muted.Render(m.spinner.View()+" Lade den Live-Stand …"))
 		return renderBoxAt(box.width, box.height, "Live", theme.BoxList, trimContent(lines, box.innerHeight()))
@@ -1152,40 +1165,89 @@ func (m *Model) livePanel(box rect) []string {
 	}
 	live := m.live
 	if live.Message != "" {
-		lines = append(lines, theme.Warning.Render(live.Message))
+		add(theme.Warning, live.Message)
+		gapLine()
 	}
 	if live.IsLive {
+		lines = append(lines, theme.Success.Bold(true).Render("● LIVE"))
 		title := "Livesendung"
-		if live.Show != nil {
+		if live.Show != nil && live.Show.Title != "" {
 			title = live.Show.Title
-			lines = append(lines, theme.Success.Render("● LIVE  ")+theme.Title.Bold(true).Render(title))
-			lines = append(lines, theme.Muted.Render(fmt.Sprintf("Zeit: %s–%s", formatUnix(live.Show.Begin), formatUnix(live.Show.End))))
-			lines = append(lines, theme.Muted.Render(fmt.Sprintf("Chat: %s · Zugang: %s", yesNo(live.Show.Chat), yesNo(live.HasAccess()))))
-		} else {
-			lines = append(lines, theme.Success.Render("● LIVE  ")+theme.Title.Bold(true).Render(title))
 		}
-		lines = append(lines, "", theme.Accent.Render("[enter] ansehen"))
+		add(theme.Title.Bold(true), title)
+		if show := live.Show; show != nil {
+			if show.Begin > 0 || show.End > 0 {
+				when := formatClock(show.Begin) + " – " + formatClock(show.End)
+				if now := time.Now(); show.End > now.Unix() {
+					when += " · noch " + strings.TrimPrefix(liveCountdown(time.Unix(show.End, 0), now), "in ")
+				}
+				add(theme.Muted, when)
+			}
+			if show.Description != "" {
+				gapLine()
+				add(theme.Muted, show.Description)
+			}
+		}
+		gapLine()
+		facts := []string{}
+		if live.Show != nil {
+			facts = append(facts, "Chat "+onOff(live.Show.Chat))
+		}
+		facts = append(facts, "Zugang "+yesNo(live.HasAccess()))
+		add(theme.Muted, strings.Join(facts, " · "))
+		if m.chatPeople != "" {
+			add(theme.Muted, m.chatPeople)
+		}
+		if live.HasAccess() {
+			gapLine()
+			lines = append(lines, theme.AccentBold.Render("▶ ")+theme.Title.Render("enter")+theme.Accent.Render(" ansehen"))
+		}
 	} else {
 		lines = append(lines, theme.Muted.Render("○ Keine Livesendung"))
 	}
-	if live.Replay != nil && live.Replay.Possible {
-		title := live.Replay.Title
+	if replay := live.Replay; replay != nil && replay.Possible {
+		gapLine()
+		lines = append(lines, theme.AccentSoft.Bold(true).Render("↺ Replay"))
+		title := replay.Title
 		if title == "" {
-			title = live.Replay.ID
+			title = replay.ID
 		}
-		lines = append(lines, "", theme.AccentSoft.Render("↺ Replay  ")+theme.Text.Render(title))
-		if live.Replay.End > 0 {
-			lines = append(lines, theme.Muted.Render("bis "+formatUnix(live.Replay.End)))
+		add(theme.Text, title)
+		if replay.End > 0 {
+			add(theme.Muted, "bis "+formatUnix(replay.End))
 		}
-		if live.Replay.CanAccess {
-			lines = append(lines, theme.Accent.Render("[r] Replay ansehen"))
+		if replay.CanAccess {
+			lines = append(lines, theme.AccentBold.Render("▶ ")+theme.Title.Render("r")+theme.Accent.Render(" Replay ansehen"))
 		}
 	}
-	if live.Scheduled != nil {
-		lines = append(lines, "", theme.Muted.Render("Nächste Sendung: "+live.Scheduled.Title+" in "+humanDuration(live.Scheduled.StartsIn)))
+	if next := live.Scheduled; next != nil {
+		gapLine()
+		lines = append(lines, theme.Muted.Bold(true).Render("Nächste Sendung"))
+		add(theme.Text, next.Title)
+		if next.StartsIn > 0 {
+			now := time.Now()
+			add(theme.Muted, liveCountdown(now.Add(time.Duration(next.StartsIn)*time.Second), now))
+		}
 	}
-	lines = append(lines, "", theme.Subtle.Render("[R] aktualisieren"))
+	gapLine()
+	lines = append(lines, theme.Subtle.Render("R aktualisieren"))
 	return renderBoxAt(box.width, box.height, "Live", theme.BoxList, trimContent(lines, box.innerHeight()))
+}
+
+// formatClock formats the hour of a Unix timestamp.
+func formatClock(value int64) string {
+	if value <= 0 {
+		return "–"
+	}
+	return time.Unix(value, 0).Local().Format("15:04")
+}
+
+// onOff formats a switch for the interface.
+func onOff(value bool) string {
+	if value {
+		return "an"
+	}
+	return "aus"
 }
 
 // announcementPanel renders the announcements.
@@ -1274,33 +1336,76 @@ func (m *Model) participantPopup(width int) []string {
 // chatPanel renders the live chat with its input line.
 func (m *Model) chatPanel(box rect) []string {
 	width := box.innerWidth()
+	// Die erste Spalte trägt den Balken der gewählten Nachricht.
+	textWidth := max(10, width-1)
 	content := []string{}
-	lines := m.chatBody(width)
+	lines, owners := m.chatBody(textWidth)
 	// The foot takes only the lines it really shows: the status when the
-	// chat is not connected, and the input or the spinner below it.
+	// chat is not connected, the spinner while it connects, otherwise the
+	// field to write with its rule and, when it answers, the quote.
 	reserved := 0
 	if !m.chatConnected && m.chatStatus != "" {
 		reserved++
 	}
-	if m.chatConnected || m.chatLoading {
+	switch {
+	case m.chatConnected:
+		reserved += m.composerRows()
+	case m.chatLoading:
 		reserved++
 	}
 	height := box.innerHeight() - reserved
 	if height < 1 {
 		height = 1
 	}
+	// Der Versatz zählt Zeilen vom Ende. Wer zurückgeblättert hat, behält
+	// seinen Ausschnitt: neue Nachrichten schieben ihn nicht weiter.
+	if added := m.chatAppended - m.chatAppendedSeen; added > 0 && m.chatScroll > 0 {
+		m.chatScroll += m.chatLinesOfLast(min(added, len(m.chatMessages)), textWidth)
+	}
+	m.chatAppendedSeen = m.chatAppended
+	// Ganz oben bleibt das Fenster voll: der älteste Ausschnitt ist der,
+	// der mit der ersten Zeile beginnt.
+	m.chatMaxScroll = max(0, len(lines)-height)
+	m.chatPage = height
+	selected := m.chatIndex(m.chatSelectedID)
+	if selected < 0 {
+		m.chatSelectedID = ""
+	}
+	// Nach einem Schritt mit den Tasten bleibt die gewählte Nachricht im
+	// Fenster.
+	if m.chatFollow && selected >= 0 {
+		first, last := -1, -1
+		for index, owner := range owners {
+			if owner == selected {
+				if first < 0 {
+					first = index
+				}
+				last = index
+			}
+		}
+		if first >= 0 {
+			m.chatScroll = min(m.chatScroll, len(lines)-1-last)
+			m.chatScroll = max(m.chatScroll, len(lines)-first-height)
+		}
+	}
+	m.chatFollow = false
+	m.chatScroll = max(0, min(m.chatScroll, m.chatMaxScroll))
 	end := len(lines) - m.chatScroll
-	if end > len(lines) {
-		end = len(lines)
+	start := max(0, end-height)
+	for index := start; index < end; index++ {
+		owner := owners[index]
+		line := lines[index]
+		// Die gewählte Nachricht trägt den Balken am Rand; ihre Blase hat
+		// die kräftigere Farbe.
+		gutter := " "
+		if owner == selected && selected >= 0 {
+			gutter = theme.Accent.Render("▌")
+		}
+		if owner >= 0 && chatSelectable(m.chatMessages[owner]) {
+			m.addRowZone(box, len(content), m.chatClick(owner), m.chatRightClick(owner))
+		}
+		content = append(content, gutter+line)
 	}
-	if end < 0 {
-		end = 0
-	}
-	start := end - height
-	if start < 0 {
-		start = 0
-	}
-	content = append(content, lines[start:end]...)
 	liveChat := m.live != nil && m.live.IsLive && (m.live.Show == nil || m.live.Show.Chat)
 	replayChat := m.live != nil && m.live.Replay != nil && m.live.Replay.ClipID != ""
 	if !liveChat && !replayChat {
@@ -1309,82 +1414,102 @@ func (m *Model) chatPanel(box rect) []string {
 			hint = "Für diese Sendung ist kein Chat eingeschaltet."
 		}
 		content = append(content, theme.Muted.Render(hint))
-		return renderBoxAt(box.width, box.height, "Live-Chat", theme.BoxList, trimContent(content, box.innerHeight()))
+		return renderBoxAt(box.width, box.height, "Chat", theme.BoxList, trimContent(content, box.innerHeight()))
 	}
 	if !liveChat {
 		if m.chatStatus != "" {
 			content = append(content, theme.Muted.Render(truncateColumn(m.chatStatus, width)))
 		}
-		return renderBoxAt(box.width, box.height, "Live-Chat", theme.BoxList, trimContent(content, box.innerHeight()))
+		return renderBoxAt(box.width, box.height, "Chat", theme.BoxList, trimContent(content, box.innerHeight()))
 	}
 	if !m.chatConnected && m.chatStatus != "" {
 		content = append(content, theme.Warning.Render(truncateColumn(m.chatStatus, width)))
 	}
 	if m.chatConnected {
-		m.chatInput.Width = max(10, width-4)
-		if m.chatFocused {
-			content = append(content, m.chatInput.View())
-		} else {
-			content = append(content, theme.Muted.Render("c tippen · ↑↓ blättern"))
+		// Das Feld steht unten im Kasten, auch wenn wenig geschrieben ist.
+		for len(content) < height {
+			content = append(content, "")
+		}
+		composer, emoji := m.chatComposer(width, selected >= 0)
+		first := len(content)
+		content = append(content, composer...)
+		// Ein Klick ins Feld setzt den Cursor hinein, ein Klick auf ein
+		// Emoji fügt es ein.
+		for line := first + 1; line < len(content)-1; line++ {
+			m.addRowZone(box, line, func() (tea.Model, tea.Cmd) {
+				if m.chatFocused {
+					return m, nil
+				}
+				m.chatSelectedID = ""
+				return m.pressKey("c")
+			}, nil)
+		}
+		if row := len(content) - 1; row < box.innerHeight() {
+			y := m.bodyTop + box.y + 1 + row
+			for _, spot := range emoji {
+				pick := spot.run
+				m.addButton(y, box.x+2+spot.x0, box.x+2+spot.x1, func() (tea.Model, tea.Cmd) {
+					m.insertEmoji(pick)
+					return m, nil
+				})
+			}
 		}
 	} else if m.chatLoading {
 		content = append(content, theme.Muted.Render(m.spinner.View()+" verbinde …"))
 	}
-	return renderBoxAt(box.width, box.height, "Live-Chat", theme.BoxList, trimContent(content, box.innerHeight()))
+	return renderBoxAt(box.width, box.height, "Chat", theme.BoxList, trimContent(content, box.innerHeight()))
 }
 
-// chatBody wraps every chat message into the width of the panel.
-func (m *Model) chatBody(width int) []string {
+// chatClick chooses a message; a click on the chosen one opens its menu at
+// the pointer.
+func (m *Model) chatClick(index int) clickFunc {
+	return func() (tea.Model, tea.Cmd) {
+		if index >= len(m.chatMessages) {
+			return m, nil
+		}
+		id := m.chatMessages[index].id
+		if m.chatSelectedID == id {
+			return m.openContextMenu(true)
+		}
+		m.chatSelectedID = id
+		return m, nil
+	}
+}
+
+// chatRightClick chooses a message and opens its menu at the pointer.
+func (m *Model) chatRightClick(index int) clickFunc {
+	return func() (tea.Model, tea.Cmd) {
+		if index >= len(m.chatMessages) {
+			return m, nil
+		}
+		m.chatSelectedID = m.chatMessages[index].id
+		return m.openContextMenu(true)
+	}
+}
+
+// chatBody draws every chat message as a bubble. The owners name the
+// message of every line; the gaps between the bubbles belong to none.
+func (m *Model) chatBody(width int) ([]string, []int) {
 	lines := []string{}
-	for _, message := range m.chatMessages {
-		if message.system {
-			for _, part := range wrapText("· "+message.text, width) {
-				lines = append(lines, theme.Muted.Render(part))
-			}
-			continue
-		}
-		from := message.from
-		if message.self {
-			from = "Du"
-		}
-		if from == "" {
-			from = "?"
-		}
-		from = truncateColumn(from, max(4, min(20, width/3)))
-		stamp := "     "
-		if !message.time.IsZero() {
-			stamp = message.time.Local().Format("15:04")
-		}
-		prefix := stamp + " " + from + ": "
-		if message.pending {
-			prefix = "… " + prefix
-		}
-		// The prefix is measured in cells: a name with an umlaut or an emoji
-		// is wider than its byte count says.
-		prefixWidth := ansi.StringWidth(prefix)
-		available := max(10, width-prefixWidth)
-		parts := wrapText(message.text, available)
-		if len(parts) == 0 {
-			parts = []string{""}
-		}
-		for index, part := range parts {
-			var text string
-			if index == 0 {
-				text = prefix + part
+	owners := []int{}
+	for index := range m.chatMessages {
+		for _, line := range m.chatMessageLines(index, width) {
+			lines = append(lines, line)
+			if line == "" {
+				owners = append(owners, -1)
 			} else {
-				text = strings.Repeat(" ", prefixWidth) + part
-			}
-			switch {
-			case message.pending:
-				lines = append(lines, theme.Muted.Render(text))
-			case message.admin:
-				lines = append(lines, theme.Warning.Render(text))
-			case message.self:
-				lines = append(lines, theme.Accent.Render(text))
-			default:
-				lines = append(lines, theme.Text.Render(text))
+				owners = append(owners, index)
 			}
 		}
 	}
-	return lines
+	return lines, owners
+}
+
+// chatLinesOfLast counts the lines of the newest messages.
+func (m *Model) chatLinesOfLast(count, width int) int {
+	total := 0
+	for index := len(m.chatMessages) - count; index < len(m.chatMessages); index++ {
+		total += len(m.chatMessageLines(index, width))
+	}
+	return total
 }

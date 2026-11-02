@@ -78,7 +78,7 @@ func TestTheChatWrapsIntoThePanel(t *testing.T) {
 			t.Errorf("panel line %d is %d cells wide, want %d: %q", index, width, box.width, ansi.Strip(line))
 		}
 	}
-	body := model.chatBody(box.innerWidth())
+	body, _ := model.chatBody(box.innerWidth())
 	if len(body) < len(model.chatMessages) {
 		t.Fatalf("the chat body has %d lines, the wide messages did not wrap", len(body))
 	}

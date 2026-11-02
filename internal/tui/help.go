@@ -80,6 +80,11 @@ func (m *Model) helpEntries() []helpEntry {
 			{"enter", "Live ansehen"},
 			{"r", "Replay ansehen"},
 			{"R", "neu laden"},
+			{"s", "Nachricht wählen"},
+			{"a", "antworten"},
+			{"enter .", "Reaktionen"},
+			{"tab", "im Feld: Chat/Studio"},
+			{"alt+1…9", "im Feld: Emoji"},
 		}},
 		{"Ankündigungen", [][2]string{
 			{"o", "Link öffnen"},

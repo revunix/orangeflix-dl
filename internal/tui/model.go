@@ -6,9 +6,11 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/charmbracelet/bubbles/spinner"
+	"github.com/charmbracelet/bubbles/textarea"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 
@@ -192,6 +194,17 @@ type chatLine struct {
 	admin   bool
 	system  bool
 	pending bool
+	// id is the id of the server, replyTo the id of the answered message.
+	id      string
+	replyTo string
+	// reactions counts the reactions by their key, mine are those of the
+	// account; cursor is the state of the server they come from.
+	reactions map[string]int
+	mine      map[string]bool
+	cursor    string
+	// studio marks a message of the account to the studio; only the team
+	// of the show reads it.
+	studio bool
 }
 
 type clipList struct {
@@ -264,6 +277,9 @@ type Model struct {
 	mouseX, mouseY int
 	// hoverX and hoverY are where the pointer stands; -1 before it moved.
 	hoverX, hoverY int
+	// lastMouse is the time of the last mouse event; a piece of a cut
+	// mouse report follows right after one.
+	lastMouse time.Time
 	// zones are the places the mouse can click, collected by the last
 	// render.
 	zones []zone
@@ -366,17 +382,45 @@ type Model struct {
 	showParticipants  bool
 	participantCursor int
 	// chat is the live chat of the current stream.
-	chatInput     textinput.Model
+	chatInput     textarea.Model
 	chatMessages  []chatLine
 	chatFocused   bool
 	chatConnected bool
 	chatLoading   bool
 	chatStatus    string
 	chatScroll    int
-	spinner       spinner.Model
-	summary       summary
-	message       string
-	isError       bool
+	// chatAppended counts the lines that came in; chatAppendedSeen is the
+	// count of the last render. The difference keeps a scrolled chat still.
+	chatAppended     int
+	chatAppendedSeen int
+	// chatMaxScroll is how far the chat can scroll back, chatPage the
+	// height of its window; both come from the last render.
+	chatMaxScroll int
+	chatPage      int
+	// chatSelectedID is the chosen chat message, chatFollow keeps it in
+	// the window after a move with the keys.
+	chatSelectedID string
+	chatFollow     bool
+	// chatReplyTo is the message the input answers.
+	chatReplyTo *chatLine
+	// chatEmojis are the reactions the server named beyond the known ones.
+	chatEmojis map[string]string
+	// avatars holds the pictures of the chat users; nil while one loads or
+	// when it is missing.
+	avatars map[string]*avatarPicture
+	// chatSelfName is the chat name of the account, learned from its own
+	// messages.
+	chatSelfName string
+	// chatToStudio sends the input to the studio instead of the chat.
+	chatToStudio bool
+	// chatComposerWidth is the width of the field at the last render.
+	chatComposerWidth int
+	// chatPeople is how many are in the chat, as the server last said.
+	chatPeople string
+	spinner    spinner.Model
+	summary    summary
+	message    string
+	isError    bool
 	// quitting ends the program.
 	quitting bool
 	exitCode int
@@ -407,6 +451,11 @@ type Model struct {
 	announcementsFunc   func(context.Context, string, int) ([]orangeflix.V3Announcement, error)
 	openChatFunc        func(context.Context) error
 	sendChatFunc        func(context.Context, string) error
+	sendStudioFunc      func(context.Context, string) error
+	replyChatFunc       func(context.Context, string, string) error
+	reactChatFunc       func(context.Context, string, string, bool) error
+	chatReactionsFunc   func(context.Context, []string) ([]app.ChatReaction, map[string]string, error)
+	chatAvatarFunc      func(context.Context, string) ([]byte, error)
 	closeChatFunc       func()
 	setSelection        func([]string)
 	setCredentials      func(user, password string)
@@ -447,11 +496,7 @@ func NewModel(ctx context.Context, opts Options) *Model {
 	filter.CharLimit = 60
 	filter.Width = 30
 
-	chat := textinput.New()
-	chat.Placeholder = "Nachricht an den Live-Chat"
-	chat.CharLimit = 500
-	chat.Prompt = "› "
-	chat.Width = 40
+	chat := newChatInput()
 
 	search := textinput.New()
 	search.Placeholder = "Suchbegriff"
@@ -524,6 +569,11 @@ func NewModel(ctx context.Context, opts Options) *Model {
 		announcementsFunc:   opts.Announcements,
 		openChatFunc:        opts.OpenChat,
 		sendChatFunc:        opts.SendChat,
+		sendStudioFunc:      opts.SendStudio,
+		replyChatFunc:       opts.ReplyChat,
+		reactChatFunc:       opts.ReactChat,
+		chatReactionsFunc:   opts.ChatReactions,
+		chatAvatarFunc:      opts.ChatAvatar,
 		closeChatFunc:       opts.CloseChat,
 		runSearchCatalog:    opts.Search,
 		setSelection:        opts.SetSelection,
@@ -614,7 +664,12 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case EventMsg:
 		m.applyEvent(message.Event)
+		if message.Event.Kind == app.EventChat && m.screen == ScreenLive {
+			return m, m.avatarCmds()
+		}
 		return m, nil
+	case AvatarMsg:
+		return m.handleAvatar(message)
 	case RunDoneMsg:
 		// Wer die Downloads verlassen hat, bleibt, wo er ist; die Meldung
 		// sagt, dass sie fertig sind.
@@ -635,6 +690,13 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.handleLatest(message)
 	case WatchedMsg:
 		return m.handleWatched(message)
+	case ChatReactMsg:
+		return m.handleChatReact(message)
+	case ChatReactionsMsg:
+		if message.Err == nil {
+			m.applyReactionStates(message.States, message.Emojis)
+		}
+		return m, nil
 	case EpisodesMsg:
 		m.loading = false
 		if message.Err != nil {
@@ -896,7 +958,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if message.Err != nil {
 			m.chatConnected = false
 			m.chatStatus = message.Err.Error()
-			m.chatMessages = append(m.chatMessages, chatLine{text: "Chat nicht erreichbar: " + cleanChatText(message.Err.Error()), system: true})
+			m.appendChatLine(chatLine{text: "Chat nicht erreichbar: " + cleanChatText(message.Err.Error()), system: true})
 			return m, nil
 		}
 		m.chatConnected = true
@@ -910,7 +972,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					break
 				}
 			}
-			m.chatMessages = append(m.chatMessages, chatLine{text: "Nachricht nicht gesendet: " + cleanChatText(message.Err.Error()), system: true})
+			m.appendChatLine(chatLine{text: "Nachricht nicht gesendet: " + cleanChatText(message.Err.Error()), system: true})
 		} else {
 			for index := range m.chatMessages {
 				if m.chatMessages[index].pending {
@@ -1000,11 +1062,16 @@ func (m *Model) applyEvent(event app.Event) {
 			moment = time.Unix(event.Done, 0)
 		}
 		line := chatLine{
-			from:  cleanChatText(event.Label),
-			text:  cleanChatText(event.Message),
-			time:  moment,
-			self:  event.Self,
-			admin: event.Admin,
+			from:    cleanChatText(event.Label),
+			text:    cleanChatText(event.Message),
+			time:    moment,
+			self:    event.Self,
+			admin:   event.Admin,
+			id:      event.ChatID,
+			replyTo: event.ChatReplyTo,
+		}
+		if event.Self && line.from != "" && line.from != "Du" {
+			m.chatSelfName = line.from
 		}
 		if event.Self {
 			for index := len(m.chatMessages) - 1; index >= 0; index-- {
@@ -1019,15 +1086,20 @@ func (m *Model) applyEvent(event app.Event) {
 				return
 			}
 		}
-		m.chatMessages = append(m.chatMessages, line)
-		if len(m.chatMessages) > 300 {
-			m.chatMessages = m.chatMessages[len(m.chatMessages)-300:]
+		m.appendChatLine(line)
+	case app.EventChatReaction:
+		if m.screen != ScreenLive {
+			return
 		}
-		if m.chatScroll == 0 {
-			m.chatScroll = 0
+		m.applyReactionStates(event.Reactions, event.Emojis)
+		if event.Reaction != nil {
+			m.applyReactionChange(*event.Reaction)
 		}
 	case app.EventChatStatus:
 		m.chatStatus = cleanChatText(event.Message)
+		if strings.HasSuffix(m.chatStatus, " im Chat") {
+			m.chatPeople = m.chatStatus
+		}
 		switch event.Message {
 		case "Chat getrennt":
 			m.chatConnected = false
@@ -1035,7 +1107,7 @@ func (m *Model) applyEvent(event app.Event) {
 			m.chatConnected = true
 		}
 		if event.Error {
-			m.chatMessages = append(m.chatMessages, chatLine{text: cleanChatText(event.Message), system: true})
+			m.appendChatLine(chatLine{text: cleanChatText(event.Message), system: true})
 		}
 	}
 }

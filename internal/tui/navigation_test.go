@@ -441,8 +441,8 @@ func TestTheMouseUsesTheTabsAndTheFooter(t *testing.T) {
 
 func TestMouseCanBeSwitchedOff(t *testing.T) {
 	for value, want := range map[string]bool{"": true, "1": true, "0": false, "off": false, "Aus": false} {
-		if got := mouseEnabled(value); got != want {
-			t.Errorf("mouseEnabled(%q) = %v, want %v", value, got, want)
+		if got := switchedOn(value); got != want {
+			t.Errorf("switchedOn(%q) = %v, want %v", value, got, want)
 		}
 	}
 }
