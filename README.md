@@ -124,17 +124,6 @@ scoop install orangeflix-dl
 
 Das Manifest liegt in `bucket/orangeflix-dl.json`. `scoop update` findet neuere Releases über die `checksums.txt` des Releases, auch bevor das Repository die fest eingetragene Version nachzieht.
 
-### winget (Windows)
-
-Die Manifeste stehen in `packaging/winget`. Damit installiert man ohne Eintrag im Katalog von winget:
-
-```powershell
-git clone https://github.com/revunix/orangeflix-dl
-winget install --manifest orangeflix-dl/packaging/winget
-```
-
-`winget install Revunix.OrangeflixDl` geht erst, wenn das Paket in [winget-pkgs](https://github.com/microsoft/winget-pkgs) angenommen wurde. Der Release-Workflow öffnet den Pull Request, sobald das Repository-Geheimnis `WINGET_TOKEN` gesetzt ist (ein GitHub-Token mit dem Bereich `public_repo`).
-
 ### Nix (Linux und macOS)
 
 ```bash
@@ -142,16 +131,6 @@ nix profile install github:revunix/orangeflix-dl
 ```
 
 Die Flake installiert das Binary des Releases für die eigene Plattform, dazu die Kompletion und die Manpage. `flake.nix` zeigt auf die Version, die der Release-Workflow zuletzt eingetragen hat.
-
-### AUR (Arch Linux)
-
-```bash
-git clone https://github.com/revunix/orangeflix-dl
-cd orangeflix-dl/packaging/aur
-makepkg -si
-```
-
-Das Paket heißt `orangeflix-dl-bin` und stellt den Befehl `orangeflix-dl` bereit. `yay -S orangeflix-dl-bin` geht erst, nachdem das Paket einmal unter [aur.archlinux.org/submit](https://aur.archlinux.org/submit/) angelegt wurde. Danach schiebt der Release-Workflow die neue `PKGBUILD` hoch, wenn das Geheimnis `AUR_SSH_PRIVATE_KEY` gesetzt ist (der private Schlüssel eines AUR-Kontos).
 
 ### Release-Archive
 

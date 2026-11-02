@@ -191,7 +191,7 @@ jobs:
           gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern checksums.txt --dir dist
           scripts/update-formula.sh "$TAG" dist/checksums.txt
           scripts/update-packages.sh "$TAG" dist/checksums.txt
-          git add Formula/orangeflix-dl.rb bucket packaging flake.nix
+          git add Formula/orangeflix-dl.rb bucket flake.nix
           if git diff --cached --quiet; then
             echo "Package files already up to date."
             exit 0
@@ -200,66 +200,3 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git commit -m "Pakete: Manifeste auf ${TAG} aktualisieren"
           git push origin HEAD:main
-
-  winget:
-    needs: release
-    runs-on: windows-latest
-    steps:
-      - name: Check for a winget token
-        id: token
-        env:
-          TOKEN: ${{ secrets.WINGET_TOKEN }}
-        shell: bash
-        run: |
-          if [ -n "$TOKEN" ]; then
-            echo "ok=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "WINGET_TOKEN fehlt. winget install funktioniert erst nach einem Pull Request an winget-pkgs."
-            echo "ok=false" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Open the winget-pkgs pull request
-        if: steps.token.outputs.ok == 'true'
-        uses: vedantmgoyal9/winget-releaser@v2
-        with:
-          identifier: Revunix.OrangeflixDl
-          installers-regex: 'orangeflix-dl_.+_windows_.+\.zip$'
-          token: ${{ secrets.WINGET_TOKEN }}
-
-  aur:
-    needs: packages
-    runs-on: ubuntu-24.04
-    steps:
-      - name: Checkout main
-        uses: actions/checkout@v7
-        with:
-          ref: main
-
-      - name: Publish the AUR package
-        env:
-          AUR_SSH_PRIVATE_KEY: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
-        run: |
-          set -euo pipefail
-          if [ -z "$AUR_SSH_PRIVATE_KEY" ]; then
-            echo "AUR_SSH_PRIVATE_KEY fehlt. Das Paket lässt sich aus packaging/aur bauen, yay findet es erst nach dem ersten Push zum AUR."
-            exit 0
-          fi
-          mkdir -p ~/.ssh
-          printf '%s\n' "$AUR_SSH_PRIVATE_KEY" > ~/.ssh/aur
-          chmod 600 ~/.ssh/aur
-          ssh-keyscan -t ed25519,rsa aur.archlinux.org >> ~/.ssh/known_hosts
-          export GIT_SSH_COMMAND="ssh -i ~/.ssh/aur -o IdentitiesOnly=yes"
-          if ! git clone aur@aur.archlinux.org:orangeflix-dl-bin.git aur-repo; then
-            echo "Das AUR-Paket orangeflix-dl-bin gibt es noch nicht. Einmal unter https://aur.archlinux.org/submit/ anlegen."
-            exit 0
-          fi
-          cp packaging/aur/PKGBUILD packaging/aur/.SRCINFO aur-repo/
-          git -C aur-repo config user.name "github-actions[bot]"
-          git -C aur-repo config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git -C aur-repo add PKGBUILD .SRCINFO
-          if git -C aur-repo diff --cached --quiet; then
-            echo "AUR package already up to date."
-            exit 0
-          fi
-          git -C aur-repo commit -m "Update to ${TAG}"
-          git -C aur-repo push

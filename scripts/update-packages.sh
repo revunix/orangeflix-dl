@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Schreibt die Manifeste für Scoop, winget, das AUR und Nix für ein Release.
+# Schreibt die Manifeste für Scoop und Nix für ein Release.
 #
 #   scripts/update-packages.sh v1.2.3 dist/checksums.txt
 #
@@ -51,12 +51,8 @@ darwin_arm64="$(sum_of "$(asset darwin arm64 tar.gz)")"
 
 win_amd64_url="$(url_of "$(asset windows amd64 zip)")"
 win_arm64_url="$(url_of "$(asset windows arm64 zip)")"
-linux_amd64_url="$(url_of "$(asset linux amd64 tar.gz)")"
-linux_arm64_url="$(url_of "$(asset linux arm64 tar.gz)")"
-darwin_amd64_url="$(url_of "$(asset darwin amd64 tar.gz)")"
-darwin_arm64_url="$(url_of "$(asset darwin arm64 tar.gz)")"
 
-mkdir -p "$root/bucket" "$root/packaging/winget" "$root/packaging/aur"
+mkdir -p "$root/bucket"
 
 cat > "$root/bucket/orangeflix-dl.json" <<EOF
 {
@@ -91,93 +87,6 @@ cat > "$root/bucket/orangeflix-dl.json" <<EOF
         }
     }
 }
-EOF
-
-cat > "$root/packaging/winget/Revunix.OrangeflixDl.installer.yaml" <<EOF
-# yaml-language-server: \$schema=https://aka.ms/winget-manifest.installer.1.6.0.schema.json
-PackageIdentifier: Revunix.OrangeflixDl
-PackageVersion: ${version}
-Installers:
-  - Architecture: x64
-    InstallerType: zip
-    InstallerUrl: ${win_amd64_url}
-    InstallerSha256: ${win_amd64}
-    NestedInstallerType: portable
-    NestedInstallerFiles:
-      - RelativeFilePath: orangeflix-dl.exe
-        PortableCommandAlias: orangeflix-dl
-  - Architecture: arm64
-    InstallerType: zip
-    InstallerUrl: ${win_arm64_url}
-    InstallerSha256: ${win_arm64}
-    NestedInstallerType: portable
-    NestedInstallerFiles:
-      - RelativeFilePath: orangeflix-dl.exe
-        PortableCommandAlias: orangeflix-dl
-ManifestType: installer
-ManifestVersion: 1.6.0
-EOF
-
-cat > "$root/packaging/winget/Revunix.OrangeflixDl.locale.en-US.yaml" <<EOF
-# yaml-language-server: \$schema=https://aka.ms/winget-manifest.defaultLocale.1.6.0.schema.json
-PackageIdentifier: Revunix.OrangeflixDl
-PackageVersion: ${version}
-PackageLocale: en-US
-Publisher: revunix
-PackageName: orangeflix-dl
-License: MIT
-ShortDescription: ${desc}
-ManifestType: defaultLocale
-ManifestVersion: 1.6.0
-EOF
-
-cat > "$root/packaging/winget/Revunix.OrangeflixDl.yaml" <<EOF
-# yaml-language-server: \$schema=https://aka.ms/winget-manifest.version.1.6.0.schema.json
-PackageIdentifier: Revunix.OrangeflixDl
-PackageVersion: ${version}
-DefaultLocale: en-US
-ManifestType: version
-ManifestVersion: 1.6.0
-EOF
-
-cat > "$root/packaging/aur/PKGBUILD" <<EOF
-# Maintainer: revunix <https://github.com/${repo}>
-pkgname=orangeflix-dl-bin
-pkgver=${version}
-pkgrel=1
-pkgdesc='${desc}'
-arch=('x86_64' 'aarch64')
-url='https://github.com/${repo}'
-license=('MIT')
-provides=('orangeflix-dl')
-conflicts=('orangeflix-dl')
-source_x86_64=('${linux_amd64_url}')
-source_aarch64=('${linux_arm64_url}')
-sha256sums_x86_64=('${linux_amd64}')
-sha256sums_aarch64=('${linux_arm64}')
-
-package() {
-  install -Dm755 orangeflix-dl "\$pkgdir/usr/bin/orangeflix-dl"
-}
-EOF
-
-cat > "$root/packaging/aur/.SRCINFO" <<EOF
-pkgbase = orangeflix-dl-bin
-	pkgdesc = ${desc}
-	pkgver = ${version}
-	pkgrel = 1
-	url = https://github.com/${repo}
-	arch = x86_64
-	arch = aarch64
-	license = MIT
-	provides = orangeflix-dl
-	conflicts = orangeflix-dl
-	source_x86_64 = ${linux_amd64_url}
-	sha256sums_x86_64 = ${linux_amd64}
-	source_aarch64 = ${linux_arm64_url}
-	sha256sums_aarch64 = ${linux_arm64}
-
-pkgname = orangeflix-dl-bin
 EOF
 
 cat > "$root/flake.nix" <<EOF
