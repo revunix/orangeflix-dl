@@ -23,50 +23,53 @@ func (m *Model) helpEntries() []helpEntry {
 	entries := []helpEntry{
 		{"Formate", [][2]string{
 			{"enter", "öffnen"},
+			{"w", "neueste Folge ansehen"},
+			{"D", "neueste Folge laden"},
 			{"/", "filtern"},
 			{"f", "Volltextsuche"},
-			{"b", "nur die Bibliothek"},
-			{"a", "in Bibliothek merken"},
+			{"v", "nur die Bibliothek"},
+			{"a", "zur Bibliothek"},
 			{"n", "neue Folgen suchen"},
 			{"d", "neue Folgen laden"},
 			{"l", "Protokoll ein/aus"},
 			{"s", "Zugangsdaten"},
 			{"p", "Speicherort"},
-			{"c", "Weiterschauen"},
-			{"m", "Merkliste"},
-			{"K", "Kalender"},
-			{"L", "Live"},
 			{"!", "Ankündigungen"},
 		}},
 		{"Folgen", [][2]string{
 			{"enter", "Menü: laden/ansehen"},
 			{"space", "markieren"},
-			{"a", "alle markieren"},
+			{"A", "alle / keine markieren"},
 			{"d", "laden"},
 			{"w", "mit mpv ansehen"},
+			{"b", "merken/entfernen"},
+			{"g", "gesehen/ungesehen"},
+			{"x", "Datei löschen"},
 			{"J", "nach Jahr filtern"},
 			{"i", "Qualität wählen"},
 			{"p", "Speicherort"},
 			{"y", "Titel kopieren"},
-			{"x", "Datei löschen"},
-			{"b", "merken/entfernen"},
 			{"r", "ähnliche Folgen"},
 			{"h", "Gast"},
+			{"esc", "Markierung, dann zurück"},
 		}},
 		{"Suche", [][2]string{
-			{"enter", "suchen"},
+			{"enter", "suchen / Treffer öffnen"},
+			{"↑ ↓", "Treffer wählen"},
 		}},
 		{"Weiterschauen", [][2]string{
 			{"enter", "Menü: laden/ansehen"},
 			{"w", "mit mpv ansehen"},
 			{"d", "laden"},
 			{"b", "merken/entfernen"},
+			{"g", "gesehen/ungesehen"},
 		}},
 		{"Merkliste", [][2]string{
 			{"enter", "Menü: laden/ansehen"},
 			{"w", "mit mpv ansehen"},
 			{"d", "laden"},
 			{"b", "aus der Merkliste entfernen"},
+			{"g", "gesehen/ungesehen"},
 		}},
 		{"Kalender", [][2]string{
 			{"enter", "Live-Ansicht"},
@@ -90,10 +93,28 @@ func (m *Model) helpEntries() []helpEntry {
 			{"w", "mit mpv ansehen"},
 		}},
 		{"Downloads", [][2]string{
-			{"l", "Protokoll"},
-			{"y", "Pfad kopieren"},
 			{"o", "Ordner öffnen"},
+			{"y", "Pfad kopieren"},
 			{"x", "Datei löschen"},
+			{"l", "Protokoll"},
+			{"esc", "zurück, Download läuft"},
+		}},
+		{"Gehe zu", [][2]string{
+			{"1", "Formate"},
+			{"2", "Weiterschauen"},
+			{"3", "Merkliste"},
+			{"4", "Kalender"},
+			{"5", "Live"},
+			{"6", "Downloads"},
+		}},
+		{"Maus", [][2]string{
+			{"Zeigen", "Menüeintrag wählen"},
+			{"Klick", "wählen"},
+			{"2. Klick", "öffnen"},
+			{"Rechtsklick", "Kontextmenü"},
+			{"Rad", "blättern"},
+			{"Reiter", "wechseln"},
+			{"Fußzeile", "Taste auslösen"},
 		}},
 		{"Anmeldung", [][2]string{
 			{"tab", "nächstes Feld"},
@@ -104,6 +125,8 @@ func (m *Model) helpEntries() []helpEntry {
 			{"↑ ↓", "wählen"},
 			{"pgup pgdn", "seitenweise"},
 			{"esc", "zurück"},
+			{"ctrl+k :", "Befehlspalette"},
+			{".", "Kontextmenü der Zeile"},
 			{"?", "diese Hilfe"},
 			{"q", "beenden"},
 			{"ctrl+c", "Abbruch"},
@@ -350,21 +373,19 @@ func overlayCentered(page, window []string, width int) []string {
 	if len(window) == 0 {
 		return page
 	}
-	result := append([]string{}, page...)
+	top, left, _ := popupPlace(len(page), width, window)
+	return overlayAt(page, window, top, left, width)
+}
 
+// overlayAt puts a window at a place of the page, like overlayCentered.
+func overlayAt(page, window []string, top, left, width int) []string {
+	if len(window) == 0 {
+		return page
+	}
+	result := append([]string{}, page...)
 	windowWidth := 0
 	for _, line := range window {
-		if lineWidth := ansi.StringWidth(line); lineWidth > windowWidth {
-			windowWidth = lineWidth
-		}
-	}
-	left := (width - windowWidth) / 2
-	if left < 0 {
-		left = 0
-	}
-	top := (len(result) - len(window)) / 2
-	if top < 0 {
-		top = 0
+		windowWidth = max(windowWidth, ansi.StringWidth(line))
 	}
 
 	for index, line := range window {

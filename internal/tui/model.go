@@ -251,6 +251,26 @@ type Model struct {
 	searchScroll  int
 	// qualityCursor is the position in the list of the qualities.
 	qualityCursor int
+	// showPalette draws the command palette over the page.
+	showPalette   bool
+	paletteInput  textinput.Model
+	paletteCursor int
+	paletteScroll int
+	// confirm is the open question before a step that cannot be undone.
+	confirm *confirmState
+	// context is the open menu of a row.
+	context *contextMenu
+	// mouseX and mouseY are where the last click landed.
+	mouseX, mouseY int
+	// hoverX and hoverY are where the pointer stands; -1 before it moved.
+	hoverX, hoverY int
+	// zones are the places the mouse can click, collected by the last
+	// render.
+	zones []zone
+	// bodyTop is the first line of the boxes, below the head line.
+	bodyTop int
+	// footerSpots are the places of the hints in the footer line.
+	footerSpots []hintSpot
 
 	// program is the running tea program.
 	program *tea.Program
@@ -376,7 +396,9 @@ type Model struct {
 	recentsFunc         func(context.Context, int) ([]orangeflix.Episode, error)
 	bookmarksFunc       func(context.Context, int) ([]orangeflix.Episode, error)
 	setBookmarkFunc     func(context.Context, string, bool) error
+	setWatchedFunc      func(context.Context, orangeflix.Episode, bool) error
 	downloadEpisodeFunc func(context.Context, orangeflix.Episode) error
+	latestEpisodeFunc   func(context.Context, int) (orangeflix.Episode, error)
 	calendarFunc        func(context.Context, int) ([]orangeflix.V3CalendarEntry, error)
 	liveFunc            func(context.Context) (*orangeflix.V3LiveInfo, error)
 	playLiveFunc        func(context.Context, *orangeflix.V3LiveInfo, string) error
@@ -443,6 +465,12 @@ func NewModel(ctx context.Context, opts Options) *Model {
 	year.Prompt = "Jahr "
 	year.Width = 10
 
+	palette := textinput.New()
+	palette.Placeholder = "Befehl suchen"
+	palette.CharLimit = 60
+	palette.Prompt = "› "
+	palette.Width = 40
+
 	path := textinput.New()
 	path.Placeholder = "~/Videos/Orangeflix"
 	path.CharLimit = 512
@@ -469,6 +497,9 @@ func NewModel(ctx context.Context, opts Options) *Model {
 		chatInput:           chat,
 		yearInput:           year,
 		pathInput:           path,
+		paletteInput:        palette,
+		hoverX:              -1,
+		hoverY:              -1,
 		run:                 opts.Run,
 		check:               opts.Check,
 		downloadNew:         opts.DownloadNew,
@@ -482,7 +513,9 @@ func NewModel(ctx context.Context, opts Options) *Model {
 		recentsFunc:         opts.Recents,
 		bookmarksFunc:       opts.Bookmarks,
 		setBookmarkFunc:     opts.SetBookmark,
+		setWatchedFunc:      opts.SetWatched,
 		downloadEpisodeFunc: opts.DownloadEpisode,
+		latestEpisodeFunc:   opts.LatestEpisode,
 		calendarFunc:        opts.Calendar,
 		liveFunc:            opts.Live,
 		playLiveFunc:        opts.PlayLive,
@@ -556,6 +589,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case tea.KeyMsg:
 		return m.handleKey(message)
+	case tea.MouseMsg:
+		return m.handleMouse(message)
 	case spinner.TickMsg:
 		var cmd tea.Cmd
 		m.spinner, cmd = m.spinner.Update(msg)
@@ -581,13 +616,25 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.applyEvent(message.Event)
 		return m, nil
 	case RunDoneMsg:
-		m.screen = ScreenSummary
+		// Wer die Downloads verlassen hat, bleibt, wo er ist; die Meldung
+		// sagt, dass sie fertig sind.
+		if m.screen == ScreenQueue {
+			m.screen = ScreenSummary
+		} else if message.Err == nil {
+			m.message = fmt.Sprintf("Downloads fertig: %d geladen, %d übersprungen, %d fehlgeschlagen.",
+				m.summary.done, m.summary.skipped, m.summary.failed)
+			m.isError = false
+		}
 		if message.Err != nil {
 			m.message = message.Err.Error()
 			m.isError = true
 			m.exitCode = 1
 		}
 		return m, nil
+	case LatestMsg:
+		return m.handleLatest(message)
+	case WatchedMsg:
+		return m.handleWatched(message)
 	case EpisodesMsg:
 		m.loading = false
 		if message.Err != nil {

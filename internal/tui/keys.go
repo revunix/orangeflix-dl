@@ -23,6 +23,15 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.quitting = true
 		return m, tea.Quit
 	}
+	if m.confirm != nil {
+		return m.handleConfirmKey(msg)
+	}
+	if m.context != nil {
+		return m.handleContextKey(msg)
+	}
+	if m.showPalette {
+		return m.handlePaletteKey(msg)
+	}
 	if m.showHelp {
 		return m.handleHelpKey(msg)
 	}
@@ -37,6 +46,9 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 	if m.showPath {
 		return m.handlePathKey(msg)
+	}
+	if handled, model, cmd := m.handleGlobalKey(msg); handled {
+		return model, cmd
 	}
 	if m.screen == ScreenLive && m.chatFocused {
 		return m.handleChatKey(msg)
@@ -75,34 +87,44 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// handleSearchKey processes the keys of the search.
+// handleSearchKey processes the keys of the search. The field has the
+// keyboard: every letter belongs to the query, only enter, the arrows and
+// esc do something else.
 func (m *Model) handleSearchKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "enter":
+		// Steht im Feld noch der Begriff der Treffer, öffnet enter den
+		// markierten Treffer; ein neuer Begriff sucht neu.
+		if m.searchOpensHit() {
+			m.openActionMenu()
+			return m, nil
+		}
 		query := strings.TrimSpace(m.searchInput.Value())
 		if query == "" {
 			return m, nil
 		}
 		m.searchQuery = query
 		return m, m.runSearch(query)
-	case "up", "k":
+	case "up":
 		if m.searchCursor > 0 {
 			m.searchCursor--
 		}
-	case "down", "j":
+		return m, nil
+	case "down":
 		if m.searchCursor < len(m.searchResults)-1 {
 			m.searchCursor++
 		}
+		return m, nil
+	case "pgup":
+		m.searchCursor = max(0, m.searchCursor-10)
+		return m, nil
+	case "pgdown":
+		m.searchCursor = max(0, min(len(m.searchResults)-1, m.searchCursor+10))
+		return m, nil
 	case "esc":
 		m.screen = ScreenFormats
 		m.searchInput.Blur()
 		return m, nil
-	case "?":
-		m.showHelp = true
-		return m, nil
-	case "q":
-		m.quitting = true
-		return m, tea.Quit
 	}
 	var cmd tea.Cmd
 	m.searchInput, cmd = m.searchInput.Update(msg)
@@ -239,9 +261,7 @@ func (m *Model) handleFormatKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.filtering = true
 		return m, m.filterInput.Focus()
 	case "f":
-		m.screen = ScreenSearch
-		m.searchInput.SetValue(m.searchQuery)
-		return m, m.searchInput.Focus()
+		return m.openSearch()
 	case "esc":
 		if m.filter != "" {
 			m.filter = ""
@@ -252,7 +272,11 @@ func (m *Model) handleFormatKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	case "enter":
 		return m.openFormat()
-	case "b":
+	case "w":
+		return m.latestOfCurrentFormat(true)
+	case "D":
+		return m.latestOfCurrentFormat(false)
+	case "v":
 		m.libraryOnly = !m.libraryOnly
 		m.formatCursor = 0
 		m.formatScroll = 0
@@ -354,9 +378,11 @@ func (m *Model) handleEpisodeKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			episode := episodes[m.episodeCursor]
 			m.selected[episode.Identifier] = !m.selected[episode.Identifier]
 		}
-	case "a":
+	case "A", "a":
+		// Sind schon alle markiert, hebt die Taste die Markierung auf.
+		all := len(episodes) > 0 && m.markedCount() == len(episodes)
 		for _, episode := range episodes {
-			m.selected[episode.Identifier] = true
+			m.selected[episode.Identifier] = !all
 		}
 	case "y":
 		m.copyEpisodeTitle()
@@ -370,11 +396,13 @@ func (m *Model) handleEpisodeKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "p":
 		return m.openPathPopup()
 	case "x":
-		m.deleteEpisodeFile()
+		m.askDeleteEpisodeFile()
 	case "w":
 		return m.watchEpisodes()
 	case "b":
 		return m.toggleBookmark()
+	case "g":
+		return m.toggleWatched()
 	case "r":
 		return m.openSimilar()
 	case "h":
@@ -387,9 +415,15 @@ func (m *Model) handleEpisodeKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "d":
 		return m.startDownload()
 	case "esc":
+		// esc nimmt erst den Jahresfilter, dann die Markierung zurück und
+		// geht erst danach zu den Formaten.
 		if m.episodeYear != "" {
 			m.episodeYear = ""
 			m.yearInput.SetValue("")
+			return m, nil
+		}
+		if m.markedCount() > 0 {
+			m.selected = map[string]bool{}
 			return m, nil
 		}
 		m.screen = ScreenFormats
@@ -424,21 +458,11 @@ func (m *Model) handleActionKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.actionCursor++
 		}
 	case "enter":
-		choice := entries[m.actionCursor]
-		m.closeActionMenu()
-		switch choice {
-		case actionWatch:
-			if m.screen == ScreenClips {
-				return m.watchCurrentClip()
-			}
-			return m.watchEpisodes()
-		case actionCancel:
-			return m, nil
-		}
-		if m.screen == ScreenClips {
-			return m.downloadCurrentClip()
-		}
-		return m.startDownloadWith(m.actionIdentifiers())
+		return m.runAction(entries[m.actionCursor])
+	case "d":
+		return m.runAction(actionDownload)
+	case "w":
+		return m.runAction(actionWatch)
 	case "esc":
 		m.closeActionMenu()
 		return m, nil
@@ -449,24 +473,81 @@ func (m *Model) handleActionKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// handleQueueKey processes the keys of the queue.
+// runAction runs one choice of the menu of an episode.
+func (m *Model) runAction(choice string) (tea.Model, tea.Cmd) {
+	m.closeActionMenu()
+	single := m.screen == ScreenClips || m.screen == ScreenSearch
+	switch choice {
+	case actionWatch:
+		if single {
+			return m.watchCurrentClip()
+		}
+		return m.watchEpisodes()
+	case actionCancel:
+		return m, nil
+	}
+	if single {
+		return m.downloadCurrentClip()
+	}
+	return m.startDownloadWith(m.actionIdentifiers())
+}
+
+// handleQueueKey processes the keys of the queue. The download goes on in
+// the background when the list is left.
 func (m *Model) handleQueueKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "l":
-		m.showLog = !m.showLog
+		m.showLogBox = !m.showLogBox
+		m.logOffset = 0
 	case "y":
 		m.copyJobPath()
 	case "o":
 		m.openJobFolder()
 	case "x":
-		m.deleteJobFile()
+		m.askDeleteJobFile()
 	case "?":
 		m.showHelp = true
-	case "q", "esc":
+	case "esc":
+		m.screen = ScreenFormats
+	case "q":
 		m.quitting = true
 		return m, tea.Quit
 	}
 	return m, nil
+}
+
+// askDeleteJobFile asks before the file of the last download is removed.
+func (m *Model) askDeleteJobFile() {
+	job := m.currentJob()
+	if job == nil || job.Path == "" {
+		return
+	}
+	m.askConfirm("Datei löschen?", job.Path, "Löschen", func() (tea.Model, tea.Cmd) {
+		m.deleteJobFile()
+		return m, nil
+	})
+}
+
+// askDeleteEpisodeFile asks before the file of the marked episode is
+// removed.
+func (m *Model) askDeleteEpisodeFile() {
+	episode, ok := m.currentEpisode()
+	if !ok {
+		return
+	}
+	if !m.episodeLoaded(episode.Identifier) {
+		m.message = "Die Folge wurde noch nicht geladen."
+		m.isError = false
+		return
+	}
+	text := episode.Title
+	if path := m.known[episode.Identifier].Path; path != "" {
+		text = path
+	}
+	m.askConfirm("Datei löschen?", text, "Löschen", func() (tea.Model, tea.Cmd) {
+		m.deleteEpisodeFile()
+		return m, nil
+	})
 }
 
 // handlePathKey processes the keys of the storage location window.
@@ -661,11 +742,16 @@ func (m *Model) handleQualityKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 // handleSummaryKey processes the keys of the summary.
 func (m *Model) handleSummaryKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
-	case "enter", "esc", "q":
+	case "enter", "esc":
 		m.screen = ScreenFormats
-		m.loadLibrary()
+		return m, m.loadLibrary()
+	case "o":
+		m.openJobFolder()
 	case "?":
 		m.showHelp = true
+	case "q":
+		m.quitting = true
+		return m, tea.Quit
 	}
 	return m, nil
 }
@@ -698,6 +784,8 @@ func (m *Model) handleClipListKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.downloadCurrentClip()
 	case "b":
 		return m.toggleBookmark()
+	case "g":
+		return m.toggleWatched()
 	case "i":
 		m.showQuality = true
 		m.qualityCursor = m.currentQualityIndex()
@@ -1056,6 +1144,7 @@ func (m *Model) deleteEpisodeFile() {
 			return
 		}
 		_ = m.store.ClearDownloaded(episode.PID, episode.Identifier)
+		m.unmarkDownloaded(episode.PID, episode.Identifier)
 		m.message = "Die Datei wurde gelöscht, die Folge wird wieder angeboten."
 		m.isError = false
 		return
@@ -1066,10 +1155,27 @@ func (m *Model) deleteEpisodeFile() {
 
 // forgetEpisode removes the download mark of an episode.
 func (m *Model) forgetEpisode(pid int, identifier string) {
+	m.unmarkDownloaded(pid, identifier)
 	if m.store == nil || identifier == "" {
 		return
 	}
 	_ = m.store.ClearDownloaded(pid, identifier)
+}
+
+// unmarkDownloaded takes the download mark from the list, so the episode
+// shows its state again without the library being read anew.
+func (m *Model) unmarkDownloaded(pid int, identifier string) {
+	known, ok := m.known[identifier]
+	if !ok || known.DownloadedAt == nil {
+		return
+	}
+	known.DownloadedAt = nil
+	known.Path = ""
+	m.known[identifier] = known
+	if counts, ok := m.knownCounts[pid]; ok && counts.loaded > 0 {
+		counts.loaded--
+		m.knownCounts[pid] = counts
+	}
 }
 
 // currentJob returns the job of the running or the last download.

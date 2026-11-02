@@ -1356,7 +1356,7 @@ func TestFooterHasNoDoubledHint(t *testing.T) {
 	model.width = 120
 	model.height = 24
 	view := model.View()
-	if strings.Count(view, "↑/↓ wählen") != 1 {
+	if strings.Count(view, "↑↓ wählen") != 1 {
 		t.Errorf("der Hinweis steht mehr als einmal:\n%s", view)
 	}
 }

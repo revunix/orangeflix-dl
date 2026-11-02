@@ -14,6 +14,10 @@ import (
 // pathListRows is the number of folders that the window shows at once.
 const pathListRows = 8
 
+// pathFirstRow is the line of the first folder inside the window: the
+// note, the field, two empty lines and the title of the list stand above.
+const pathFirstRow = 5
+
 // pathPopup builds the window that changes the storage location of the
 // downloads. The window floats over the page and is centered in both
 // directions.

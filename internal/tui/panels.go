@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/charmbracelet/bubbles/textinput"
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/revunix/orangeflix-dl/internal/app"
@@ -92,14 +93,22 @@ func (m *Model) formatsPanel(box rect) []string {
 	if top {
 		content = append(content, theme.Muted.Render(fmt.Sprintf("… %d weitere", start)))
 	}
+	positions := map[int]int{}
+	for index, format := range formats {
+		positions[format.PID] = index
+	}
 	for index := start; index < end; index++ {
 		row := rows[index]
 		if row.format == nil {
 			content = append(content, groupHeader(row.header, fmt.Sprintf("%d", row.count)))
 			continue
 		}
-		content = append(content, renderRowWidth(m.formatLine(*row.format),
-			row.format.PID == formats[m.formatCursor].PID, box.innerWidth()))
+		if m.screen == ScreenFormats {
+			m.addRowZone(box, len(content), m.pick(&m.formatCursor, positions[row.format.PID], "enter"), m.menuAt(&m.formatCursor, positions[row.format.PID]))
+		}
+		selected := row.format.PID == formats[m.formatCursor].PID
+		content = append(content, m.hoverRow(box, len(content),
+			renderRowWidth(m.formatLine(*row.format), selected, box.innerWidth()), selected))
 	}
 	if bottom {
 		content = append(content, theme.Muted.Render(fmt.Sprintf("… %d weitere", len(rows)-end)))
@@ -438,6 +447,10 @@ func (m *Model) episodesPanel(box rect) []string {
 	if top {
 		content = append(content, theme.Muted.Render(fmt.Sprintf("… %d weitere", start)))
 	}
+	positions := map[string]int{}
+	for index, episode := range episodes {
+		positions[episode.Identifier] = index
+	}
 	for index := start; index < end; index++ {
 		row := rows[index]
 		if row.episode == nil {
@@ -445,8 +458,13 @@ func (m *Model) episodesPanel(box rect) []string {
 				fmt.Sprintf("%s · %d geladen", plural(int64(row.count), "Folge", "Folgen"), row.loaded)))
 			continue
 		}
-		content = append(content, renderRowWidth(m.episodeLine(*row.episode),
-			row.episode.Identifier == episodes[m.episodeCursor].Identifier, box.innerWidth()))
+		// Ein Klick wählt die Folge, ein zweiter öffnet das Menü; die
+		// rechte Taste öffnet das Kontextmenü.
+		position := positions[row.episode.Identifier]
+		m.addRowZone(box, len(content), m.pick(&m.episodeCursor, position, "enter"), m.menuAt(&m.episodeCursor, position))
+		selected := row.episode.Identifier == episodes[m.episodeCursor].Identifier
+		content = append(content, m.hoverRow(box, len(content),
+			renderRowWidth(m.episodeLine(*row.episode), selected, box.innerWidth()), selected))
 	}
 	if bottom {
 		content = append(content, theme.Muted.Render(fmt.Sprintf("… %d weitere", len(episodes)-end)))
@@ -791,7 +809,17 @@ func (m *Model) searchPanel(box rect) []string {
 		content = append(content, theme.Muted.Render(fmt.Sprintf("… %d weitere", start)))
 	}
 	for index := start; index < end; index++ {
-		content = append(content, renderRowWidth(m.searchLine(m.searchResults[index]), index == m.searchCursor, box.innerWidth()))
+		hit := index
+		m.addRowZone(box, len(content), func() (tea.Model, tea.Cmd) {
+			if m.searchCursor == hit {
+				m.openActionMenu()
+				return m, nil
+			}
+			m.searchCursor = hit
+			return m, nil
+		}, m.menuAt(&m.searchCursor, hit))
+		content = append(content, m.hoverRow(box, len(content),
+			renderRowWidth(m.searchLine(m.searchResults[index]), index == m.searchCursor, box.innerWidth()), index == m.searchCursor))
 	}
 	if bottom {
 		content = append(content, theme.Muted.Render(fmt.Sprintf("… %d weitere", len(m.searchResults)-end)))
@@ -888,6 +916,11 @@ func (m *Model) episodeProgress(identifier string) int {
 			return episode.ProgressPercent
 		}
 	}
+	for _, episode := range m.searchResults {
+		if episode.Identifier == identifier {
+			return episode.ProgressPercent
+		}
+	}
 	return 0
 }
 
@@ -942,7 +975,9 @@ func (m *Model) clipPanel(box rect) []string {
 		content = append(content, theme.Muted.Render(fmt.Sprintf("… %d weitere", start)))
 	}
 	for index := start; index < end; index++ {
-		content = append(content, renderRowWidth(m.clipLine(m.clipList.episodes[index]), index == m.clipList.cursor, box.innerWidth()))
+		m.addRowZone(box, len(content), m.pick(&m.clipList.cursor, index, "enter"), m.menuAt(&m.clipList.cursor, index))
+		content = append(content, m.hoverRow(box, len(content),
+			renderRowWidth(m.clipLine(m.clipList.episodes[index]), index == m.clipList.cursor, box.innerWidth()), index == m.clipList.cursor))
 	}
 	if end < len(m.clipList.episodes) {
 		content = append(content, theme.Muted.Render(fmt.Sprintf("… %d weitere", len(m.clipList.episodes)-end)))
@@ -1045,7 +1080,15 @@ func (m *Model) calendarPanel(box rect) []string {
 			content = append(content, groupHeader(row.header, ""))
 			continue
 		}
-		content = append(content, renderRowWidth(m.calendarLine(*row.entry), row.entry.ID == m.calendar[m.calendarCursor].ID, box.innerWidth()))
+		for position, entry := range m.calendar {
+			if entry.ID == row.entry.ID {
+				m.addRowZone(box, len(content), m.pick(&m.calendarCursor, position, "enter"), m.menuAt(&m.calendarCursor, position))
+				break
+			}
+		}
+		selected := row.entry.ID == m.calendar[m.calendarCursor].ID
+		content = append(content, m.hoverRow(box, len(content),
+			renderRowWidth(m.calendarLine(*row.entry), selected, box.innerWidth()), selected))
 	}
 	if end < len(rows) {
 		content = append(content, theme.Muted.Render(fmt.Sprintf("… %d weitere", len(rows)-end)))
@@ -1165,7 +1208,9 @@ func (m *Model) announcementPanel(box rect) []string {
 		item := m.announcements[index]
 		line := theme.Muted.Render(fmt.Sprintf("%-7s", strings.ToUpper(item.Type))) + " " +
 			theme.Text.Render(truncateColumn(item.Title, 50))
-		content = append(content, renderRowWidth(line, index == m.announceCursor, box.innerWidth()))
+		m.addRowZone(box, len(content), m.pick(&m.announceCursor, index, "o"), m.menuAt(&m.announceCursor, index))
+		content = append(content, m.hoverRow(box, len(content),
+			renderRowWidth(line, index == m.announceCursor, box.innerWidth()), index == m.announceCursor))
 	}
 	return renderBoxAt(box.width, box.height, "Ankündigungen", theme.BoxList, trimContent(content, box.innerHeight()))
 }

@@ -133,7 +133,7 @@ func (m *Model) downloadNewOfCurrentFormat() (tea.Model, tea.Cmd) {
 	format := formats[m.formatCursor]
 	entry, ok := m.libraryEntry(format.PID)
 	if !ok {
-		m.message = "Das Format ist nicht in der Bibliothek. Mit 'a' merken."
+		m.message = "Das Format ist nicht in der Bibliothek. Mit 'a' zur Bibliothek hinzufügen."
 		m.isError = true
 		return m, nil
 	}

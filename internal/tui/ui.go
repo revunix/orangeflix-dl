@@ -2,6 +2,8 @@ package tui
 
 import (
 	"context"
+	"os"
+	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 
@@ -54,8 +56,13 @@ type Options struct {
 	Bookmarks func(context.Context, int) ([]orangeflix.Episode, error)
 	// SetBookmark adds or removes a clip from the list.
 	SetBookmark func(context.Context, string, bool) error
+	// SetWatched marks a clip as watched or not watched on the account.
+	SetWatched func(context.Context, orangeflix.Episode, bool) error
 	// DownloadEpisode loads one episode from a clip list.
 	DownloadEpisode func(context.Context, orangeflix.Episode) error
+	// LatestEpisode returns the newest episode of a format without loading
+	// the whole list.
+	LatestEpisode func(context.Context, int) (orangeflix.Episode, error)
 	// Calendar loads the upcoming calendar entries.
 	Calendar func(context.Context, int) ([]orangeflix.V3CalendarEntry, error)
 	// Live loads the live state.
@@ -100,9 +107,27 @@ func NewUI(opts Options) *UI {
 		ctx = context.Background()
 	}
 	model := NewModel(ctx, opts)
-	program := tea.NewProgram(model, tea.WithAltScreen())
+	programOptions := []tea.ProgramOption{tea.WithAltScreen()}
+	// Die Maus lässt sich abschalten: solange das Programm sie liest,
+	// markiert das Terminal Text nur mit gedrückter Umschalttaste.
+	if mouseEnabled(os.Getenv("ORANGEFLIX_MOUSE")) {
+		// Alle Bewegungen, auch ohne gedrückte Taste: sonst gäbe es kein
+		// Hervorheben unter dem Zeiger.
+		programOptions = append(programOptions, tea.WithMouseAllMotion())
+	}
+	program := tea.NewProgram(model, programOptions...)
 	model.program = program
 	return &UI{model: model, program: program}
+}
+
+// mouseEnabled reads ORANGEFLIX_MOUSE: "0", "off", "no" and "false" turn
+// the mouse off, everything else keeps it on.
+func mouseEnabled(value string) bool {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "0", "off", "no", "false", "aus", "nein":
+		return false
+	}
+	return true
 }
 
 // Program returns the tea program.

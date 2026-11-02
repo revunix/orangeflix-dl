@@ -4,6 +4,7 @@ import (
 	"strings"
 	"time"
 
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 )
@@ -24,7 +25,10 @@ func (m *Model) View() string {
 		height = 24
 	}
 
+	// Die Klickflächen entstehen beim Zeichnen neu.
+	m.zones = m.zones[:0]
 	header := m.header(width)
+	m.bodyTop = len(header)
 	footer := m.footer(width)
 
 	// Der Inhalt bekommt den Platz zwischen Kopf- und Fußzeile.
@@ -39,6 +43,21 @@ func (m *Model) View() string {
 	lines = append(lines, body...)
 	lines = append(lines, footer...)
 
+	// Die Tasten der Fußzeile lassen sich anklicken.
+	footerY := len(lines) - 1
+	for _, spot := range m.footerSpots {
+		if spot.run == "" {
+			continue
+		}
+		key := spot.run
+		m.addButton(footerY, spot.x0, spot.x1, func() (tea.Model, tea.Cmd) { return m.pressKey(key) })
+	}
+	if m.screen == ScreenSplash {
+		for y := range lines {
+			m.addZone(y, 0, width, func() (tea.Model, tea.Cmd) { return m.pressKey(" ") })
+		}
+	}
+
 	// Die Seite wird zuerst gemalt, dann liegen die Fenster darüber. So behält
 	// das Fenster seinen eigenen Hintergrund. Die Seite bleibt unverändert:
 	// sie neu zu tönen würde bei jedem Öffnen den ganzen Bildschirm neu
@@ -46,45 +65,211 @@ func (m *Model) View() string {
 	lines = m.paintRows(lines)
 	// Solange ein Fenster offen ist, liegt ein Schleier über der Seite: sie
 	// bleibt lesbar, das Fenster steht davor.
-	if m.showHelp || m.showQuality || m.showPath || m.showAction || m.showParticipants {
+	if m.windowOpen() {
 		for index := range lines {
 			lines[index] = dimText(lines[index])
 		}
 	}
-	if m.showHelp {
-		lines = overlayCentered(lines, m.helpPopup(width), width)
+	// Die Fenster liegen in der Reihenfolge übereinander, in der sie die
+	// Tasten bekommen: das oberste hat die Tastatur und die Maus.
+	page := len(lines)
+	overlayTo := func(window []string, top, left int, rows map[int]popupRow) {
+		lines = overlayAt(lines, window, top, left, width)
+		m.popupZones(page, width, top, left, window, rows)
 	}
-	if m.showQuality {
-		lines = overlayCentered(lines, m.qualityPopup(width), width)
-	}
-	if m.showAction {
-		lines = overlayCentered(lines, m.actionPopup(width), width)
-	}
-	if m.showParticipants {
-		lines = overlayCentered(lines, m.participantPopup(width), width)
+	overlay := func(window []string, rows map[int]popupRow) {
+		top, left, _ := popupPlace(page, width, window)
+		overlayTo(window, top, left, rows)
 	}
 	if m.showPath {
-		lines = overlayCentered(lines, m.pathPopup(width), width)
+		window := m.pathPopup(width)
+		rows := map[int]popupRow{}
+		end := min(m.pathOffset+m.pathVisibleRows(), len(m.pathDirs))
+		for index := m.pathOffset; index < end; index++ {
+			folder := index
+			rows[pathFirstRow+index-m.pathOffset] = popupRow{
+				click: m.pick(&m.pathCursor, folder, "tab"),
+				hover: func() { m.pathCursor = folder },
+			}
+		}
+		overlay(window, rows)
 	}
+	if m.showParticipants {
+		window := m.participantPopup(width)
+		rows := map[int]popupRow{}
+		if episode, ok := m.currentEpisode(); ok {
+			for index := range episode.Participants {
+				rows[2+index] = m.entryRow(&m.participantCursor, index, "enter")
+			}
+		}
+		overlay(window, rows)
+	}
+	if m.showAction {
+		window := m.actionPopup(width)
+		rows := map[int]popupRow{}
+		for index := range actionEntries() {
+			rows[2+index] = m.entryRow(&m.actionCursor, index, "enter")
+		}
+		overlay(window, rows)
+	}
+	if m.showQuality {
+		window := m.qualityPopup(width)
+		rows := map[int]popupRow{}
+		for index := range m.qualityEntries() {
+			rows[1+index] = m.entryRow(&m.qualityCursor, index, "enter")
+		}
+		overlay(window, rows)
+	}
+	if m.showHelp {
+		overlay(m.helpPopup(width), nil)
+	}
+	if m.showPalette {
+		window := m.palettePopup(width)
+		rows := map[int]popupRow{}
+		end := min(m.paletteScroll+m.paletteRows(), len(m.filteredPaletteItems()))
+		for index := m.paletteScroll; index < end; index++ {
+			item := index
+			rows[paletteFirstRow+index-m.paletteScroll] = popupRow{
+				click: func() (tea.Model, tea.Cmd) { return m.runPaletteItem(item) },
+				hover: func() { m.paletteCursor = item },
+			}
+		}
+		overlay(window, rows)
+	}
+	if m.context != nil {
+		window := m.contextPopup()
+		top, left := m.contextPlace(page, width, window)
+		rows := map[int]popupRow{}
+		for index := range m.context.items {
+			item := index
+			rows[index] = popupRow{
+				click: func() (tea.Model, tea.Cmd) { return m.runContextItem(item) },
+				hover: func() { m.context.cursor = item },
+			}
+		}
+		overlayTo(window, top, left, rows)
+	}
+	if m.confirm != nil {
+		window := m.confirmPopup(width)
+		first := m.confirmFirstRow(width)
+		rows := map[int]popupRow{
+			first:     m.entryRow(&m.confirm.cursor, 0, "enter"),
+			first + 1: m.entryRow(&m.confirm.cursor, 1, "enter"),
+		}
+		overlay(window, rows)
+	}
+	// Die Schaltfläche unter dem Zeiger leuchtet.
+	m.highlightHover(lines, width)
 	return strings.Join(lines, "\n")
+}
+
+// windowOpen tells whether a window lies over the page.
+func (m *Model) windowOpen() bool {
+	return m.showHelp || m.showQuality || m.showPath || m.showAction || m.showParticipants ||
+		m.showPalette || m.confirm != nil || m.context != nil
 }
 
 // header builds the head line of the screen: the brand, the path, the next
 // livestream, the status and the clock.
 func (m *Model) header(width int) []string {
-	clock := time.Now().Format("15:04")
-	return renderHeader(width, m.breadcrumb(), m.statusChip(), m.statusLine(), m.nextLiveHint(time.Now()), clock)
+	now := time.Now()
+	lines := renderHeader(width, m.breadcrumb(), m.statusChip(), m.statusLine(), m.nextLiveHint(now), now.Format("15:04"))
+	// Die Linie unter dem Kopf trägt die Reiter.
+	if m.showsTabs() && len(lines) > 1 {
+		bar, spots := m.tabBar(width)
+		lines[1] = bar
+		m.headerZones(lines, spots, now)
+	}
+	return lines
+}
+
+// tabBar draws the tabs into the rule below the head line. The open tab
+// stands in the accent color on the surface of a marked row. When the
+// terminal is narrow the labels get shorter, at last only the digits stay.
+func (m *Model) tabBar(width int) (string, []hintSpot) {
+	tabs := m.tabs()
+	short := map[string]string{"1": "Formate", "2": "Weiter", "3": "Merkliste", "4": "Kalender", "5": "Live", "6": "Downloads"}
+	labels := func(mode int) []string {
+		out := make([]string, len(tabs))
+		for index, tab := range tabs {
+			switch mode {
+			case 0:
+				out[index] = " " + tab.key + " " + tab.label + " "
+			case 1:
+				out[index] = " " + tab.key + " " + short[tab.key] + " "
+			default:
+				out[index] = " " + tab.key + " "
+			}
+		}
+		return out
+	}
+	var cells []string
+	for mode := 0; mode < 3; mode++ {
+		cells = labels(mode)
+		total := margin + 1
+		for _, cell := range cells {
+			total += ansi.StringWidth(cell) + 1
+		}
+		if total <= width {
+			break
+		}
+	}
+
+	active := m.activeTab()
+	var b strings.Builder
+	spots := []hintSpot{}
+	column := margin + 1
+	b.WriteString(theme.Divider.Render(strings.Repeat(boxHorizontal, column)))
+	for index, tab := range tabs {
+		cell := cells[index]
+		cellWidth := ansi.StringWidth(cell)
+		if column+cellWidth > width {
+			break
+		}
+		if tab.key == active {
+			if background := sequenceOf(theme.Selected); background != "" {
+				b.WriteString(withBackground(theme.AccentBold.Render(cell), background) + "\x1b[0m")
+			} else {
+				// Ohne Farben zeigen Klammern den offenen Reiter.
+				b.WriteString("[" + cell[1:len(cell)-1] + "]")
+			}
+		} else {
+			key := strings.Index(cell, tab.key)
+			b.WriteString(theme.Subtle.Render(cell[:key+len(tab.key)]) + theme.Muted.Render(cell[key+len(tab.key):]))
+		}
+		spots = append(spots, hintSpot{x0: column, x1: column + cellWidth, run: tab.key})
+		column += cellWidth
+		if column < width {
+			b.WriteString(theme.Divider.Render(boxHorizontal))
+			column++
+		}
+	}
+	if column < width {
+		b.WriteString(theme.Divider.Render(strings.Repeat(boxHorizontal, width-column)))
+	}
+	return b.String(), spots
 }
 
 // footer builds the foot line of the screen. The message of the Programm
 // belongs into the bar: it stands on the right of the keys, and when there
 // is no room it gets a bar of its own above them.
 func (m *Model) footer(width int) []string {
-	// Die Fußzeile hält denselben Rand wie die Kästen.
-	lines := renderFooter(width-2*margin, m.hints())
-	for index := range lines {
-		lines[index] = strings.Repeat(" ", margin) + lines[index]
+	// Die Fußzeile hält denselben Rand wie die Kästen. Eine Meldung steht
+	// rechts daneben, solange dafür nur weniger wichtige Tasten weichen.
+	hints := m.hints()
+	room := width - 2*margin
+	if m.message != "" {
+		reduced := room - ansi.StringWidth("● "+m.message) - 2
+		if footerKeepsMain(reduced, hints) {
+			room = reduced
+		}
 	}
+	line, spots := layoutFooter(room, hints)
+	m.footerSpots = m.footerSpots[:0]
+	for _, spot := range spots {
+		m.footerSpots = append(m.footerSpots, hintSpot{x0: spot.x0 + margin, x1: spot.x1 + margin, run: spot.run})
+	}
+	lines := []string{strings.Repeat(" ", margin) + line}
 	if m.message == "" {
 		return lines
 	}
@@ -145,6 +330,14 @@ func (m *Model) body(width, height int) []string {
 		// Die Anmeldung ist eine schmale Karte in der Mitte.
 		cardWidth := min(78, width-2*margin)
 		box := rect{x: (width - cardWidth) / 2, y: max(margin+2, (height-16)/2), width: cardWidth, height: 12}
+		// Ein Klick auf ein Feld setzt den Cursor hinein.
+		for field := 0; field < startFields; field++ {
+			index := field
+			m.addRowZone(box, 2+field, func() (tea.Model, tea.Cmd) {
+				m.field = index
+				return m, m.focusField()
+			}, nil)
+		}
 		return m.render(place(screen, box, m.startPanel(box.width)), width)
 	case ScreenQueue:
 		box, logBox, info := m.wideBoxes(width, height)

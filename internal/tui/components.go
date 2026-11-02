@@ -9,10 +9,55 @@ import (
 	"github.com/charmbracelet/x/ansi"
 )
 
-// keyHint is one shortcut of the footer.
+// keyHint is one shortcut of the footer and of the command palette.
 type keyHint struct {
-	Key   string
+	// Key is the key as the footer shows it ("↑↓", "enter").
+	Key string
+	// Label is the short text of the footer.
 	Label string
+	// Run is the key that is pressed when the hint is clicked or picked in
+	// the palette; empty for hints that only explain, like the arrows.
+	Run string
+	// Long is the text of the palette; empty means Label.
+	Long string
+	// Prio orders the hints when the footer is too narrow: the higher the
+	// number, the earlier the hint gives way.
+	Prio int
+}
+
+// The priorities of the hints.
+const (
+	// prioAlways never leaves the footer.
+	prioAlways = 0
+	// prioMain is what the screen is for.
+	prioMain = 1
+	// prioUseful is shown when there is room.
+	prioUseful = 2
+	// prioExtra is shown on wide terminals.
+	prioExtra = 3
+	// prioPalette is only in the palette and in the help.
+	prioPalette = 9
+)
+
+// hint builds a hint whose key is also the key that runs it.
+func hint(key, label string, prio int) keyHint {
+	return keyHint{Key: key, Label: label, Run: key, Prio: prio}
+}
+
+// hintLong builds a hint with a longer text for the palette.
+func hintLong(key, label, long string, prio int) keyHint {
+	return keyHint{Key: key, Label: label, Run: key, Long: long, Prio: prio}
+}
+
+// hintShow builds a hint that only explains and runs nothing.
+func hintShow(key, label string, prio int) keyHint {
+	return keyHint{Key: key, Label: label, Prio: prio}
+}
+
+// hintSpot is the place of a hint in the footer line.
+type hintSpot struct {
+	x0, x1 int
+	run    string
 }
 
 // The characters of the boxes: thin lines with round corners, the title
@@ -294,36 +339,100 @@ func renderRule(width int) string {
 	return theme.Divider.Render(strings.Repeat(boxHorizontal, width))
 }
 
-// renderFooter renders the key hints as keycaps and wraps them onto at most
-// two lines.
+// renderFooter renders the key hints as keycaps in one line.
 func renderFooter(width int, hints []keyHint) []string {
-	if width <= 0 {
-		return []string{""}
-	}
-	// Die Taste hell und fett, die Beschreibung gedämpft, ein Punkt trennt
-	// die Paare.
-	gap := theme.Divider.Render("  ·  ")
-	rendered := make([]string, 0, len(hints))
-	for _, hint := range hints {
-		rendered = append(rendered, theme.Title.Render(hint.Key)+" "+theme.KeyLabel.Render(hint.Label))
-	}
-	if len(rendered) == 0 {
-		return []string{""}
-	}
+	line, _ := layoutFooter(width, hints)
+	return []string{line}
+}
 
-	current := rendered[0]
-	lines := []string{}
-	for _, hint := range rendered[1:] {
-		candidate := current + gap + hint
-		if ansi.StringWidth(candidate) > width {
-			lines = append(lines, current)
-			current = hint
+// footerGap separates two hints of the footer.
+const footerGap = "  ·  "
+
+// footerKeepsMain tells whether the main hints fit into the width.
+func footerKeepsMain(width int, hints []keyHint) bool {
+	total := 0
+	for _, item := range hints {
+		if item.Prio > prioMain {
 			continue
 		}
-		current = candidate
+		if total > 0 {
+			total += ansi.StringWidth(footerGap)
+		}
+		total += ansi.StringWidth(item.Key) + 1 + ansi.StringWidth(item.Label)
 	}
-	lines = append(lines, current)
-	return lines
+	return total <= width
+}
+
+// layoutFooter fits the hints into one line. When the line is too narrow
+// the least important hints give way, the most important keep their order;
+// the help key then says that there is more. The spots tell where each
+// hint stands, so a click can run it.
+func layoutFooter(width int, hints []keyHint) (string, []hintSpot) {
+	if width <= 0 {
+		return "", nil
+	}
+	shown := make([]keyHint, 0, len(hints))
+	for _, item := range hints {
+		if item.Prio < prioPalette {
+			shown = append(shown, item)
+		}
+	}
+	if len(shown) == 0 {
+		return "", nil
+	}
+	plainWidth := func(items []keyHint) int {
+		total := 0
+		for index, item := range items {
+			if index > 0 {
+				total += ansi.StringWidth(footerGap)
+			}
+			total += ansi.StringWidth(item.Key) + 1 + ansi.StringWidth(item.Label)
+		}
+		return total
+	}
+	dropped := false
+	for plainWidth(shown) > width {
+		worst := -1
+		for index, item := range shown {
+			if item.Prio == prioAlways {
+				continue
+			}
+			if worst < 0 || item.Prio >= shown[worst].Prio {
+				worst = index
+			}
+		}
+		if worst < 0 {
+			break
+		}
+		shown = append(shown[:worst:worst], shown[worst+1:]...)
+		dropped = true
+	}
+	if dropped {
+		for index := range shown {
+			if shown[index].Key == "?" {
+				shown[index].Label = "mehr"
+			}
+		}
+	}
+
+	// Die Taste hell und fett, die Beschreibung gedämpft, ein Punkt trennt
+	// die Paare.
+	gap := theme.Divider.Render(footerGap)
+	var b strings.Builder
+	spots := make([]hintSpot, 0, len(shown))
+	column := 0
+	for index, item := range shown {
+		if index > 0 {
+			b.WriteString(gap)
+			column += ansi.StringWidth(footerGap)
+		}
+		cell := theme.Title.Render(item.Key) + " " + theme.KeyLabel.Render(item.Label)
+		cellWidth := ansi.StringWidth(item.Key) + 1 + ansi.StringWidth(item.Label)
+		b.WriteString(cell)
+		spots = append(spots, hintSpot{x0: column, x1: column + cellWidth, run: item.Run})
+		column += cellWidth
+	}
+	return fitToWidth(b.String(), width), spots
 }
 
 // padStyled puts a styled text into a field of the given width. The padding

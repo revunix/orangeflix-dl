@@ -228,6 +228,11 @@ func (m *Model) setEpisodeBookmarked(identifier string, on bool) {
 			m.clipList.episodes[index].Bookmarked = on
 		}
 	}
+	for index := range m.searchResults {
+		if m.searchResults[index].Identifier == identifier {
+			m.searchResults[index].Bookmarked = on
+		}
+	}
 }
 
 // removeClip removes one clip from the visible list.
@@ -248,7 +253,17 @@ func (m *Model) removeClip(identifier string) {
 // downloadCurrentClip loads the clip under the cursor.
 func (m *Model) downloadCurrentClip() (tea.Model, tea.Cmd) {
 	episode, ok := m.currentEpisode()
-	if !ok || m.downloadEpisodeFunc == nil {
+	if !ok {
+		m.message = "Keine Folge ausgewählt."
+		m.isError = true
+		return m, nil
+	}
+	return m.downloadSingle(episode)
+}
+
+// downloadSingle loads one episode and shows the download list.
+func (m *Model) downloadSingle(episode orangeflix.Episode) (tea.Model, tea.Cmd) {
+	if m.downloadEpisodeFunc == nil {
 		m.message = "Der Download steht nicht zur Verfügung."
 		m.isError = true
 		return m, nil

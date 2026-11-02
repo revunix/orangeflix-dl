@@ -46,6 +46,8 @@ func (m *Model) screenEpisodes() []orangeflix.Episode {
 		return m.filteredEpisodes()
 	case ScreenClips:
 		return m.clipList.episodes
+	case ScreenSearch:
+		return m.searchResults
 	}
 	return nil
 }
@@ -62,6 +64,8 @@ func (m *Model) currentEpisode() (orangeflix.Episode, bool) {
 		index = m.episodeCursor
 	case ScreenClips:
 		index = m.clipList.cursor
+	case ScreenSearch:
+		index = m.searchCursor
 	}
 	if index < 0 || index >= len(episodes) {
 		index = 0
@@ -92,7 +96,7 @@ func (m *Model) watchCurrentClip() (tea.Model, tea.Cmd) {
 // ones, otherwise the episode under the cursor.
 func (m *Model) playableEpisodes() []orangeflix.Episode {
 	episodes := m.screenEpisodes()
-	if m.screen == ScreenClips {
+	if m.screen == ScreenClips || m.screen == ScreenSearch {
 		if episode, ok := m.currentEpisode(); ok {
 			return []orangeflix.Episode{episode}
 		}

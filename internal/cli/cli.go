@@ -259,8 +259,14 @@ func Run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 			SetBookmark: func(ctx context.Context, identifier string, on bool) error {
 				return application.SetBookmark(ctx, identifier, on)
 			},
+			SetWatched: func(ctx context.Context, episode orangeflix.Episode, watched bool) error {
+				return application.SetWatched(ctx, episode, watched)
+			},
 			DownloadEpisode: func(ctx context.Context, episode orangeflix.Episode) error {
 				return application.DownloadEpisode(ctx, episode)
+			},
+			LatestEpisode: func(ctx context.Context, pid int) (orangeflix.Episode, error) {
+				return application.LatestEpisode(ctx, pid)
 			},
 			Calendar: func(ctx context.Context, limit int) ([]orangeflix.V3CalendarEntry, error) {
 				return application.Calendar(ctx, limit)

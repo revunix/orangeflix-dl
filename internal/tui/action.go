@@ -1,6 +1,10 @@
 package tui
 
 import (
+	"strings"
+
+	"github.com/charmbracelet/x/ansi"
+
 	"github.com/revunix/orangeflix-dl/internal/orangeflix"
 )
 
@@ -36,8 +40,13 @@ func (m *Model) actionPopup(width int) []string {
 	content = append(content, theme.Muted.Render("Was soll geschehen?"))
 	content = append(content, "")
 
+	// Neben jedem Eintrag steht die Taste, die ihn auch ohne Menü auslöst.
+	keys := map[string]string{actionDownload: "d", actionWatch: "w", actionCancel: "esc"}
 	for index, entry := range entries {
-		content = append(content, renderWindowRow(theme.Row.Render(entry), index == m.actionCursor, 32))
+		key := keys[entry]
+		gap := max(1, 32-rowIndent-ansi.StringWidth(entry)-ansi.StringWidth(key)-1)
+		line := theme.Row.Render(entry) + strings.Repeat(" ", gap) + theme.Subtle.Render(key)
+		content = append(content, renderWindowRow(line, index == m.actionCursor, 32))
 	}
 
 	return windowBoxFootColor(36, fitToWidth(title, 28), "", theme.BoxList, content)
@@ -45,7 +54,7 @@ func (m *Model) actionPopup(width int) []string {
 
 // actionEpisode returns the episode the menu belongs to.
 func (m *Model) actionEpisode() (orangeflix.Episode, bool) {
-	if m.screen == ScreenClips {
+	if m.screen == ScreenClips || m.screen == ScreenSearch {
 		return m.currentEpisode()
 	}
 	if m.screen != ScreenEpisodes {
@@ -81,7 +90,7 @@ func (m *Model) closeActionMenu() {
 // actionIdentifiers returns the episodes the menu works on: the marked
 // ones, otherwise the episode that was picked.
 func (m *Model) actionIdentifiers() []string {
-	if m.screen == ScreenClips {
+	if m.screen == ScreenClips || m.screen == ScreenSearch {
 		if episode, ok := m.currentEpisode(); ok {
 			return []string{episode.Identifier}
 		}

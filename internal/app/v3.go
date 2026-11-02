@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -442,6 +443,55 @@ func (a *App) SetBookmark(ctx context.Context, identifier string, on bool) error
 	return client.RemoveBookmark(ctx, identifier)
 }
 
+// SetWatched marks a clip as watched or as not watched on the account. The
+// API keeps only the position of a clip and turns it into the share the
+// website shows: the end counts as watched, zero as not started.
+func (a *App) SetWatched(ctx context.Context, episode orangeflix.Episode, watched bool) error {
+	if episode.Identifier == "" {
+		return errors.New("no clip given")
+	}
+	client, err := a.v3Client(ctx)
+	if err != nil {
+		return err
+	}
+	seconds := 0
+	if watched {
+		seconds = episode.DurationSeconds
+		if seconds <= 0 {
+			seconds = clockToSeconds(episode.Duration)
+		}
+		if seconds <= 0 {
+			// Die Liste kannte die Länge nicht, die Wiedergabe kennt sie.
+			playback, err := client.Playback(ctx, episode.Identifier)
+			if err != nil {
+				return err
+			}
+			seconds = playback.Clip.DurationSeconds
+		}
+		if seconds <= 0 {
+			return fmt.Errorf("the length of %s is unknown", episode.Identifier)
+		}
+	}
+	return client.UpdateProgress(ctx, episode.Identifier, seconds)
+}
+
+// clockToSeconds reads a running time like "00:31:52" or "31:52".
+func clockToSeconds(value string) int {
+	parts := strings.Split(strings.TrimSpace(value), ":")
+	if len(parts) < 2 || len(parts) > 3 {
+		return 0
+	}
+	total := 0
+	for _, part := range parts {
+		number, err := strconv.Atoi(part)
+		if err != nil || number < 0 {
+			return 0
+		}
+		total = total*60 + number
+	}
+	return total
+}
+
 // Calendar returns the upcoming entries.
 func (a *App) Calendar(ctx context.Context, limit int) ([]orangeflix.V3CalendarEntry, error) {
 	client, err := a.v3Client(ctx)
@@ -504,6 +554,51 @@ func (a *App) DownloadEpisode(ctx context.Context, episode orangeflix.Episode) e
 	}
 	a.episodeFailures, a.firstFailure = 0, ""
 	return a.downloadEpisode(ctx, format, episode)
+}
+
+// ErrNoEpisode tells that a format has no episode yet.
+var ErrNoEpisode = errors.New("the format has no episode")
+
+// LatestEpisode returns the newest episode of a format. Only the first page
+// of the feed is read, so the answer comes without loading the whole list.
+func (a *App) LatestEpisode(ctx context.Context, pid int) (orangeflix.Episode, error) {
+	format, ok := orangeflix.FormatByPID(pid)
+	if !ok {
+		format = orangeflix.Format{PID: pid, Slug: fmt.Sprintf("format-%d", pid), Title: fmt.Sprintf("Format %d", pid)}
+	}
+	episodes, err := a.episodesPage(ctx, format, 1)
+	if err != nil {
+		return orangeflix.Episode{}, err
+	}
+	newest, ok := NewestEpisode(episodes)
+	if !ok {
+		return orangeflix.Episode{}, ErrNoEpisode
+	}
+	if newest.PID == 0 {
+		newest.PID = pid
+	}
+	if newest.FormatName == "" {
+		newest.FormatName = format.Title
+	}
+	return newest, nil
+}
+
+// NewestEpisode picks the newest episode: the latest date, on the same day
+// the higher number. The feeds do not all list the newest first.
+func NewestEpisode(episodes []orangeflix.Episode) (orangeflix.Episode, bool) {
+	if len(episodes) == 0 {
+		return orangeflix.Episode{}, false
+	}
+	newest := episodes[0]
+	for _, episode := range episodes[1:] {
+		switch {
+		case episode.Date.After(newest.Date):
+			newest = episode
+		case episode.Date.Equal(newest.Date) && episode.Number > newest.Number:
+			newest = episode
+		}
+	}
+	return newest, true
 }
 
 // sortEpisodesByNumber sorts the episodes by their number, the oldest first.
