@@ -30,6 +30,9 @@ type liveRunner struct {
 	resume   int
 	start    time.Time
 	duration int
+	clipID   string
+	chat     []replayChatLine
+	chatNext int
 
 	reportMu          sync.Mutex
 	reportErrorLogged bool
@@ -62,6 +65,7 @@ func (a *App) PlayLive(ctx context.Context, info *orangeflix.V3LiveInfo, mode st
 		}
 		runner.title = info.Replay.Title
 		runner.duration = int(info.Replay.End - info.Replay.Begin)
+		runner.clipID = info.Replay.ClipID
 		start, startErr := mpdStartTime(ctx, a.V3, streamURL)
 		if startErr != nil {
 			a.logf("Die Startzeit des Replays ist nicht lesbar (%s), der Fortschritt wird nicht gemeldet.", startErr.Error())
@@ -202,6 +206,8 @@ func (r *liveRunner) play(ctx context.Context) error {
 	}
 	defer ipc.Close()
 
+	r.loadReplayChat(ctx)
+	r.emitReplayChat(r.resume)
 	position := r.resume
 	lastStatus := -1
 	lastReport := time.Now()
@@ -230,6 +236,7 @@ loop:
 			if position != lastStatus {
 				lastStatus = position
 				r.app.event(Event{Kind: EventPlaying, Label: "Live: " + r.title, Done: int64(position)})
+				r.emitReplayChat(position)
 			}
 			if time.Since(lastReport) >= liveReportInterval {
 				go r.reportLive(ctx, position)
@@ -250,6 +257,98 @@ loop:
 		r.app.event(Event{Kind: EventPlayed, Message: "Wiedergabe beendet."})
 	}
 	return nil
+}
+
+// replayChatLine is one message of a chat replay, placed on the timeline
+// of the video.
+type replayChatLine struct {
+	at   float64
+	from string
+	text string
+	unix int64
+}
+
+// loadReplayChat fetches the chat of a replay. A failure only leaves the
+// panel empty: the video still plays.
+func (r *liveRunner) loadReplayChat(ctx context.Context) {
+	if r.mode != "replay" || r.clipID == "" || r.app.V3 == nil || r.app.V3.Client == nil {
+		return
+	}
+	end := float64(r.duration)
+	if end <= 0 {
+		end = 1
+	}
+	replay, err := r.app.V3.Client.ChatReplay(ctx, r.clipID, 0, end)
+	if err != nil {
+		r.app.logf("Der Chat-Mitschnitt konnte nicht geladen werden: %s", err.Error())
+		r.app.event(Event{Kind: EventChatStatus, Message: "Chat-Mitschnitt nicht verfügbar", Error: true})
+		return
+	}
+	lines := make([]replayChatLine, 0, len(replay.Messages))
+	for _, message := range replay.Messages {
+		text := strings.TrimSpace(message.Message)
+		if text == "" {
+			continue
+		}
+		lines = append(lines, replayChatLine{
+			at:   replayChatOffset(message, r.start.Unix(), r.duration),
+			from: message.Username,
+			text: text,
+			unix: message.Time,
+		})
+	}
+	sort.Slice(lines, func(i, j int) bool { return lines[i].at < lines[j].at })
+	r.chat = lines
+	if len(lines) == 0 {
+		r.app.event(Event{Kind: EventChatStatus, Message: "Kein Chat-Mitschnitt"})
+		return
+	}
+	r.app.event(Event{Kind: EventChatStatus, Message: fmt.Sprintf("Chat-Mitschnitt: %d Nachrichten", len(lines))})
+}
+
+// emitReplayChat sends the messages that belong up to the position.
+func (r *liveRunner) emitReplayChat(position int) {
+	for r.chatNext < len(r.chat) && r.chat[r.chatNext].at <= float64(position) {
+		line := r.chat[r.chatNext]
+		r.chatNext++
+		r.app.event(Event{
+			Kind:    EventChat,
+			Label:   line.from,
+			Message: line.text,
+			Done:    line.unix,
+		})
+	}
+}
+
+// replayChatOffset places one replay message on the video timeline, in
+// seconds. videoTime is already an offset when it fits into the duration;
+// otherwise the wall clock is measured from the start of the replay.
+func replayChatOffset(message orangeflix.V3ChatMessage, begin int64, duration int) float64 {
+	limit := float64(duration) + 120
+	if limit < 120 {
+		limit = 24 * 3600
+	}
+	video := message.VideoTime
+	if video > 1_000_000_000_000 {
+		video /= 1000
+	}
+	if video >= 0 && video <= limit && (video > 0 || message.Time == 0) {
+		return video
+	}
+	moment := message.Time
+	if moment > 1_000_000_000_000 {
+		moment /= 1000
+	}
+	if video > 1_000_000_000 {
+		moment = int64(video)
+	}
+	if begin > 0 && moment > 0 {
+		return float64(moment - begin)
+	}
+	if video > 0 {
+		return video
+	}
+	return 0
 }
 
 // reportLive sends one position ping.

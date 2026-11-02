@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -43,6 +44,10 @@ type V3Client struct {
 	Attempts int
 	Sleep    func(context.Context, time.Duration)
 	Logf     func(format string, args ...any)
+
+	// mu guards the tokens. A rejected token is refreshed or replaced by
+	// one login only, even when several requests fail at the same time.
+	mu sync.Mutex
 }
 
 // v3LoginResponse is the answer of the login.
@@ -105,13 +110,46 @@ func (c *V3Client) logf(format string, args ...any) {
 
 // SetToken stores a token that was fetched earlier.
 func (c *V3Client) SetToken(access, refresh string, expiresAt time.Time) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	c.AccessToken = access
 	c.RefreshToken = refresh
 	c.ExpiresAt = expiresAt
 }
 
+// Adopt fills the tokens that are still empty. A token that is already
+// known stays, so a stored token does not overwrite a fresh login.
+func (c *V3Client) Adopt(access, refresh string, expiresAt time.Time) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.AccessToken == "" && access != "" {
+		c.AccessToken = access
+	}
+	if c.RefreshToken == "" && refresh != "" {
+		c.RefreshToken = refresh
+	}
+	if c.ExpiresAt.IsZero() && !expiresAt.IsZero() {
+		c.ExpiresAt = expiresAt
+	}
+}
+
+// Session returns the tokens.
+func (c *V3Client) Session() (access, refresh string, expiresAt time.Time) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.AccessToken, c.RefreshToken, c.ExpiresAt
+}
+
 // TokenValid reports whether the access token can still be used.
 func (c *V3Client) TokenValid() bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.tokenUsable()
+}
+
+// tokenUsable reports whether the access token can still be used. The caller
+// holds mu.
+func (c *V3Client) tokenUsable() bool {
 	return c.AccessToken != "" && (c.ExpiresAt.IsZero() || time.Now().Before(c.ExpiresAt.Add(-time.Minute)))
 }
 
@@ -122,17 +160,31 @@ func (c *V3Client) TokenValid() bool {
 // are limited, so a new one is only created when the old one does not work
 // any more.
 func (c *V3Client) request(ctx context.Context, method, path string, query url.Values, body any, out any) error {
-	err := c.do(ctx, c.AccessToken, method, path, query, body, out)
-	if !errors.Is(err, ErrV3Unauthorized) {
+	c.mu.Lock()
+	token := c.AccessToken
+	c.mu.Unlock()
+	err := c.do(ctx, token, method, path, query, body, out)
+	if !errors.Is(err, ErrV3Unauthorized) || token == "" {
 		return err
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	// Another request may have replaced the token already.
+	if c.AccessToken != "" && c.AccessToken != token {
+		return c.do(ctx, c.AccessToken, method, path, query, body, out)
+	}
+	c.logf("Der Token wurde abgelehnt, erneuere ihn.")
+	c.AccessToken = ""
+	if c.RefreshToken != "" {
+		if refreshErr := c.refresh(ctx); refreshErr != nil {
+			c.logf("Der Token konnte nicht erneuert werden (%s), hole einen neuen.", refreshErr.Error())
+			c.RefreshToken = ""
+		}
 	}
 	if c.AccessToken == "" {
-		return err
-	}
-	c.logf("Der Token wurde abgelehnt, hole einen neuen.")
-	c.AccessToken = ""
-	if _, loginErr := c.Login(ctx); loginErr != nil {
-		return loginErr
+		if _, loginErr := c.login(ctx); loginErr != nil {
+			return loginErr
+		}
 	}
 	return c.do(ctx, c.AccessToken, method, path, query, body, out)
 }
@@ -213,6 +265,13 @@ func (c *V3Client) do(ctx context.Context, token, method, path string, query url
 // Login fetches a new access token. The answer tells whether the account
 // asks for a second factor.
 func (c *V3Client) Login(ctx context.Context) (bool, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.login(ctx)
+}
+
+// login fetches a new access token. The caller holds mu.
+func (c *V3Client) login(ctx context.Context) (bool, error) {
 	body := map[string]any{
 		"email":      c.Username,
 		"password":   c.Password,
@@ -220,7 +279,7 @@ func (c *V3Client) Login(ctx context.Context) (bool, error) {
 		"deviceName": "orangeflix-dl",
 	}
 	var answer v3LoginResponse
-	if err := c.request(ctx, http.MethodPost, "auth/login", nil, body, &answer); err != nil {
+	if err := c.do(ctx, "", http.MethodPost, "auth/login", nil, body, &answer); err != nil {
 		return false, err
 	}
 	if answer.RequiresTotp {
@@ -248,8 +307,10 @@ func (e *TotpRequiredError) Error() string {
 // CompleteTotpLogin finishes the login with the code of the second factor.
 func (c *V3Client) CompleteTotpLogin(ctx context.Context, totpToken, code string) error {
 	body := map[string]any{"totpToken": totpToken, "code": strings.TrimSpace(code)}
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	var answer v3LoginResponse
-	if err := c.request(ctx, http.MethodPost, "auth/login/totp", nil, body, &answer); err != nil {
+	if err := c.do(ctx, "", http.MethodPost, "auth/login/totp", nil, body, &answer); err != nil {
 		return err
 	}
 	if answer.Auth.AccessToken == "" {
@@ -261,12 +322,19 @@ func (c *V3Client) CompleteTotpLogin(ctx context.Context, totpToken, code string
 
 // Refresh fetches a new access token with the refresh token.
 func (c *V3Client) Refresh(ctx context.Context) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.refresh(ctx)
+}
+
+// refresh fetches a new access token. The caller holds mu.
+func (c *V3Client) refresh(ctx context.Context) error {
 	if c.RefreshToken == "" {
 		return errors.New("no refresh token")
 	}
 	body := map[string]any{"refreshToken": c.RefreshToken}
 	var answer v3RefreshResponse
-	if err := c.request(ctx, http.MethodPost, "auth/refresh", nil, body, &answer); err != nil {
+	if err := c.do(ctx, "", http.MethodPost, "auth/refresh", nil, body, &answer); err != nil {
 		return err
 	}
 	if answer.Auth.AccessToken == "" {
@@ -299,17 +367,23 @@ func (c *V3Client) setFromAuth(access, refresh string, expiresIn, expiresAt int6
 // already known is kept: the account is limited in the number of sessions, so
 // a new one is only created when the old one is rejected.
 func (c *V3Client) EnsureToken(ctx context.Context) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if !c.tokenUsable() {
+		c.AccessToken = ""
+	}
 	if c.AccessToken != "" {
 		return nil
 	}
 	if c.RefreshToken != "" {
-		if err := c.Refresh(ctx); err == nil {
+		if err := c.refresh(ctx); err == nil {
 			return nil
 		} else {
 			c.logf("Der Token konnte nicht erneuert werden (%s), hole einen neuen.", err.Error())
+			c.RefreshToken = ""
 		}
 	}
-	_, err := c.Login(ctx)
+	_, err := c.login(ctx)
 	return err
 }
 

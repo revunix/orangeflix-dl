@@ -24,6 +24,8 @@ type V3 struct {
 	// totpCode is the code of the interface for the next login.
 	totpCode string
 	totpMu   sync.Mutex
+	// mu serialises the login, so parallel callers share one session.
+	mu sync.Mutex
 }
 
 // TokenStore keeps the access token.
@@ -32,18 +34,30 @@ type TokenStore interface {
 	SetToken(token string) error
 }
 
+// refreshStore keeps the refresh token between runs.
+type refreshStore interface {
+	GetRefresh() (string, error)
+	SetRefresh(token string) error
+}
+
+// expiryStore keeps the time the access token runs out.
+type expiryStore interface {
+	GetExpiry() (time.Time, error)
+	SetExpiry(expiry time.Time) error
+}
+
 // EnsureV3 makes sure that the version 3 client has a usable token. The
-// token of the last run is reused when it is still valid.
+// token of the last run is reused when it is still valid. The calls are
+// serialised: several parts of the program ask at the same time, and each
+// of them used to open a new session.
 func (a *App) EnsureV3(ctx context.Context) error {
 	if a.V3 == nil {
 		return errors.New("the version 3 API is not available")
 	}
+	a.V3.mu.Lock()
+	defer a.V3.mu.Unlock()
 	client := a.V3.Client
-	if client.AccessToken == "" && a.V3.TokenStore != nil {
-		if token, err := a.V3.TokenStore.GetToken(); err == nil && token != "" {
-			client.AccessToken = token
-		}
-	}
+	a.loadSession(client)
 	if err := client.EnsureToken(ctx); err != nil {
 		var totp *orangeflix.TotpRequiredError
 		if !errors.As(err, &totp) {
@@ -63,12 +77,51 @@ func (a *App) EnsureV3(ctx context.Context) error {
 		}
 		a.logf("Anmeldung mit dem zweiten Faktor abgeschlossen.")
 	}
-	if a.V3.TokenStore != nil && client.AccessToken != "" {
-		if err := a.V3.TokenStore.SetToken(client.AccessToken); err != nil {
-			a.logf("Der Token konnte nicht gespeichert werden: %s", err.Error())
+	a.saveSession(client)
+	return nil
+}
+
+// loadSession copies a stored session into the client.
+func (a *App) loadSession(client *orangeflix.V3Client) {
+	store := a.V3.TokenStore
+	if store == nil {
+		return
+	}
+	access, _ := store.GetToken()
+	refresh := ""
+	var expiry time.Time
+	if session, ok := store.(refreshStore); ok {
+		refresh, _ = session.GetRefresh()
+	}
+	if session, ok := store.(expiryStore); ok {
+		expiry, _ = session.GetExpiry()
+	}
+	client.Adopt(access, refresh, expiry)
+}
+
+// saveSession stores the session of the client.
+func (a *App) saveSession(client *orangeflix.V3Client) {
+	store := a.V3.TokenStore
+	if store == nil {
+		return
+	}
+	access, refresh, expiry := client.Session()
+	if access == "" {
+		return
+	}
+	if err := store.SetToken(access); err != nil {
+		a.logf("Der Token konnte nicht gespeichert werden: %s", err.Error())
+	}
+	if session, ok := store.(refreshStore); ok {
+		if err := session.SetRefresh(refresh); err != nil {
+			a.logf("Der Refresh-Token konnte nicht gespeichert werden: %s", err.Error())
 		}
 	}
-	return nil
+	if session, ok := store.(expiryStore); ok {
+		if err := session.SetExpiry(expiry); err != nil {
+			a.logf("Das Ablaufdatum des Tokens konnte nicht gespeichert werden: %s", err.Error())
+		}
+	}
 }
 
 // Profile returns the account with the state of the subscription.

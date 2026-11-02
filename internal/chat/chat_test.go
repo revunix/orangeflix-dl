@@ -25,6 +25,17 @@ func TestWireMessageConvertsTextAndTime(t *testing.T) {
 	}
 }
 
+func TestAFullQueueKeepsTheMessage(t *testing.T) {
+	session := &Session{events: make(chan Event, 1), done: make(chan struct{})}
+	session.send(Event{Kind: EventStatus, Status: "alt"})
+	session.send(Event{Kind: EventMessage, Message: Message{Text: "neu"}})
+	session.send(Event{Kind: EventStatus, Status: "weg"})
+	got := <-session.events
+	if got.Kind != EventMessage || got.Message.Text != "neu" {
+		t.Fatalf("event = %+v, want the message", got)
+	}
+}
+
 func TestParseTimeAcceptsNumbers(t *testing.T) {
 	got := parseTime(json.RawMessage(`1793561076991`))
 	if got.Unix() != 1793561076 {

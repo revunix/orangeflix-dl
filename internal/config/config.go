@@ -79,6 +79,8 @@ type Options struct {
 	Parallel int
 	// Delay is the pause between two downloads in seconds.
 	Delay float64
+	// Limit is the download speed cap in KiB per second. Zero means no cap.
+	Limit int
 	// Thumb stores the thumbnail next to the video.
 	Thumb bool
 	// Meta stores the metadata as JSON next to the video.
@@ -241,6 +243,16 @@ func ParseArgs(args []string) (*Options, error) {
 				return nil, errors.New("error: --parallel expects a number from 1 to 8")
 			}
 			i += 2
+		case arg == "--limit":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				return nil, errors.New("error: --limit requires a number of KiB per second")
+			}
+			o.Limit, err = strconv.Atoi(args[i+1])
+			if err != nil || o.Limit < 1 || o.Limit > 1_000_000 {
+				o.Limit = 0
+				return nil, errors.New("error: --limit expects a number of KiB per second from 1 to 1000000")
+			}
+			i += 2
 		case arg == "--delay":
 			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
 				return nil, errors.New("error: --delay requires seconds")
@@ -346,6 +358,16 @@ func (o *Options) Resolve(env Env, stderr io.Writer) error {
 		if file.Parallel >= 1 && file.Parallel <= 8 {
 			o.Parallel = file.Parallel
 		}
+	}
+	if o.Limit == 0 {
+		if value := env("ORANGEFLIX_LIMIT"); value != "" {
+			if parsed, err := strconv.Atoi(value); err == nil && parsed >= 1 && parsed <= 1_000_000 {
+				o.Limit = parsed
+			}
+		}
+	}
+	if o.Limit == 0 && file.Limit >= 1 && file.Limit <= 1_000_000 {
+		o.Limit = file.Limit
 	}
 	if o.Quality == "" {
 		o.Quality = env("ORANGEFLIX_QUALITY")

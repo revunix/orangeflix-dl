@@ -7,6 +7,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/zalando/go-keyring"
 )
@@ -304,6 +305,18 @@ func TestFile(t *testing.T) {
 		}
 		if _, err := f.GetToken(); !errors.Is(err, ErrNotFound) {
 			t.Errorf("GetToken() after ClearToken = %v, want ErrNotFound", err)
+		}
+		if err := f.SetRefresh("refresh-1"); err != nil {
+			t.Fatalf("SetRefresh: %v", err)
+		}
+		if err := f.SetExpiry(time.Unix(1_700_000_000, 0)); err != nil {
+			t.Fatalf("SetExpiry: %v", err)
+		}
+		if got, err := f.GetRefresh(); err != nil || got != "refresh-1" {
+			t.Fatalf("GetRefresh = %q, %v", got, err)
+		}
+		if got, err := f.GetExpiry(); err != nil || got.Unix() != 1_700_000_000 {
+			t.Fatalf("GetExpiry = %v, %v", got, err)
 		}
 		entries, err := os.ReadDir(dir)
 		if err != nil || len(entries) != 1 {

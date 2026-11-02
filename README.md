@@ -105,12 +105,53 @@ Die Bilder stehen in [`docs/screenshots`](docs/screenshots/) und stammen aus der
 
 ```bash
 brew tap revunix/orangeflix-dl https://github.com/revunix/orangeflix-dl
+brew trust revunix/orangeflix-dl
 brew install orangeflix-dl
 ```
+
+Homebrew 7 lädt eine Formel aus einem Tap von Dritten erst nach `brew trust`. Ohne das bricht `brew info` und manchmal auch `brew install` mit „untrusted tap“ ab.
 
 Die Formel installiert das fertige Binary aus dem jeweils neuesten Release für die eigene Plattform (macOS und Linux, Intel und ARM), dazu die Kompletion für bash, zsh und fish und die Manpage. Aktualisieren geht mit `brew upgrade orangeflix-dl`. Zum Ansehen mit `--watch` braucht es [mpv](https://mpv.io/) (`brew install mpv`).
 
 Die Formel fragt beim Laden selbst das neueste Release bei GitHub ab (Version, URLs und die Prüfsummen aus dessen `checksums.txt`); `brew upgrade` findet neue Versionen also ohne Änderung am Repository, und jedes Archiv wird weiter gegen seine Prüfsumme geprüft. Ist GitHub nicht erreichbar, gilt die im Repository eingetragene Version. Diese schreibt der Release-Workflow nach jedem neuen Release selbst um (`scripts/update-formula.sh`).
+
+### Scoop (Windows)
+
+```powershell
+scoop bucket add orangeflix-dl https://github.com/revunix/orangeflix-dl
+scoop install orangeflix-dl
+```
+
+Das Manifest liegt in `bucket/orangeflix-dl.json`. `scoop update` findet neuere Releases über die `checksums.txt` des Releases, auch bevor das Repository die fest eingetragene Version nachzieht.
+
+### winget (Windows)
+
+Die Manifeste stehen in `packaging/winget`. Damit installiert man ohne Eintrag im Katalog von winget:
+
+```powershell
+git clone https://github.com/revunix/orangeflix-dl
+winget install --manifest orangeflix-dl/packaging/winget
+```
+
+`winget install Revunix.OrangeflixDl` geht erst, wenn das Paket in [winget-pkgs](https://github.com/microsoft/winget-pkgs) angenommen wurde. Der Release-Workflow öffnet den Pull Request, sobald das Repository-Geheimnis `WINGET_TOKEN` gesetzt ist (ein GitHub-Token mit dem Bereich `public_repo`).
+
+### Nix (Linux und macOS)
+
+```bash
+nix profile install github:revunix/orangeflix-dl
+```
+
+Die Flake installiert das Binary des Releases für die eigene Plattform, dazu die Kompletion und die Manpage. `flake.nix` zeigt auf die Version, die der Release-Workflow zuletzt eingetragen hat.
+
+### AUR (Arch Linux)
+
+```bash
+git clone https://github.com/revunix/orangeflix-dl
+cd orangeflix-dl/packaging/aur
+makepkg -si
+```
+
+Das Paket heißt `orangeflix-dl-bin` und stellt den Befehl `orangeflix-dl` bereit. `yay -S orangeflix-dl-bin` geht erst, nachdem das Paket einmal unter [aur.archlinux.org/submit](https://aur.archlinux.org/submit/) angelegt wurde. Danach schiebt der Release-Workflow die neue `PKGBUILD` hoch, wenn das Geheimnis `AUR_SSH_PRIVATE_KEY` gesetzt ist (der private Schlüssel eines AUR-Kontos).
 
 ### Release-Archive
 
@@ -170,6 +211,7 @@ orangeflix-dl --links-file <datei>
 | `--quality <q>` | `best` (Standard), `hd` (1080p), `sd` (niedrigste), `mobile` (720p), `audio` |
 | `--layout <layout>` | `compat` (Standard) oder `flat` |
 | `--parallel <n>` | Bis zu n Downloads gleichzeitig (1-8, Standard 1) |
+| `--limit <KiB/s>` | Obergrenze der Downloadgeschwindigkeit; parallele Downloads teilen sie sich |
 | `--delay <s>` | Pause zwischen zwei Downloads in Sekunden |
 | `--thumb` | Vorschaubild als `.jpg` neben das Video legen |
 | `--meta` | Metadaten als `.json` neben das Video legen |
@@ -220,7 +262,7 @@ orangeflix-dl --profile
 
 Das Programm benutzt die API v3, die auch die Orangeflix-App nutzt:
 
-1. **Anmeldung** über `POST /api/v3/auth/login` mit E-Mail und Passwort. Die Antwort enthält einen Zugriffstoken, der sieben Tage gilt. Der Token landet im Schlüsselbund des Systems und wird bei den nächsten Starts wiederverwendet - das Konto darf nur eine begrenzte Zahl neuer Sitzungen anlegen, deshalb loggt das Programm nur einmal pro Woche ein.
+1. **Anmeldung** über `POST /api/v3/auth/login` mit E-Mail und Passwort. Die Antwort enthält einen Zugriffstoken und einen Refresh-Token. Beides landet im Schlüsselbund (sonst in der Zugangsdaten-Datei) und wird beim nächsten Start wiederverwendet. Läuft der Zugriffstoken ab oder lehnt die API ihn ab, holt das Programm mit dem Refresh-Token einen neuen, statt sich neu anzumelden. Das Konto darf nur eine begrenzte Zahl neuer Sitzungen anlegen; parallele Aufrufe teilen sich deshalb eine Anmeldung.
 2. **Katalog** über `GET /api/v3/content/magazines` (ohne Token): alle Formate mit Nummer, Titel, Kürzel, Status und der Zahl der Folgen.
 3. **Episoden** über `GET /api/v3/content/feed` mit fünfzig Folgen je Anfrage. Fällt die API aus, kommen der RSS-Feed und die alte JSON-API als Rückfall.
 4. **Dateien** über `GET /api/v3/playback/{id}`. Die Dateien liegen auf dem Auslieferungsnetz und lassen sich ohne Zugangsdaten laden; der Token steckt in der URL und ist an die Sitzung gebunden. Die Antwort nennt außerdem den gespeicherten Stand (`progress.lastPosition`).
@@ -321,7 +363,7 @@ Beim Abspielen startet [mpv](https://mpv.io/) im Hintergrund: mpv öffnet sein e
 
 Der Fortschritt geht während des Ansehens alle 30 Sekunden an das Konto und beim Beenden noch einmal. Die Website zeigt die Folge danach als angefangen an, und beim nächsten Abspielen setzt das Programm an der gespeicherten Position fort. In der Episodenliste steht der Stand als „▶ 21 %“.
 
-Bei einer Livesendung (`L`) steht unter der Sendung der Live-Chat. `c` setzt den Cursor ins Eingabefeld, `enter` schickt die Nachricht, `esc` verlässt das Feld; mit `↑`/`↓` blättert man durch die Nachrichten. Der Chat verbindet sich beim Öffnen der Live-Ansicht automatisch und wird beim Verlassen wieder getrennt.
+Bei einer Livesendung (`L`) steht unter der Sendung der Live-Chat. `c` setzt den Cursor ins Eingabefeld, `enter` schickt die Nachricht, `esc` verlässt das Feld; mit `↑`/`↓` blättert man durch die Nachrichten. Der Chat verbindet sich beim Öffnen der Live-Ansicht automatisch und wird beim Verlassen wieder getrennt. Die Wiederholung (`r`) lädt den Chat-Mitschnitt und lässt ihn mit der Abspielposition mitlaufen; schreiben kann man dort nicht.
 
 Ohne Oberfläche geht es auch:
 
@@ -350,6 +392,8 @@ orangeflix-dl --check          # Exit 1, wenn eine Prüfung fehlschlägt
 orangeflix-dl --download-new   # lädt nur die neuen Folgen
 ```
 
+Findet `--check` neue Folgen, zeigt macOS eine Mitteilung und Linux eine, wenn `notify-send` vorhanden ist. Die Textausgabe bleibt davon unabhängig.
+
 ## Umgebungsvariablen
 
 | Variable | Beschreibung | Standard |
@@ -365,6 +409,7 @@ orangeflix-dl --download-new   # lädt nur die neuen Folgen
 | `ORANGEFLIX_CONFIG_FILE` | Konfigurationsdatei der Vorgaben | `~/.config/orangeflix-dl/config` |
 | `ORANGEFLIX_TOTP` | Code des zweiten Faktors | - |
 | `ORANGEFLIX_PARALLEL` | Downloads gleichzeitig (1-8) | `1` |
+| `ORANGEFLIX_LIMIT` | Obergrenze in KiB/s, `0` heißt ohne Grenze | `0` |
 | `ORANGEFLIX_DELAY` | Pause zwischen Downloads (Sekunden) | `0` |
 | `ORANGEFLIX_THUMB` | Vorschaubild `.jpg` mitliefern (`1`) | aus |
 | `ORANGEFLIX_META` | Metadaten `.json` mitliefern (`1`) | aus |

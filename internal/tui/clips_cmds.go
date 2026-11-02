@@ -253,6 +253,11 @@ func (m *Model) playLive(mode string) (tea.Model, tea.Cmd) {
 		m.isError = true
 		return m, nil
 	}
+	if mode == "replay" {
+		// The live socket would mix with the transcript of the replay.
+		m.closeChat()
+		m.chatStatus = "Chat-Mitschnitt wird geladen …"
+	}
 	live := m.live
 	m.loading = true
 	m.loadingLabel = "Starte Wiedergabe …"

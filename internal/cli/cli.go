@@ -46,6 +46,7 @@ Options:
   --quality <qualitaet>      best, hd, sd, mobile, audio
   --layout <layout>          compat (Standard) oder flat
   --parallel <n>             bis zu n Downloads gleichzeitig (1-8)
+  --limit <KiB/s>            Geschwindigkeit der Downloads begrenzen
   --delay <sekunden>         Pause zwischen zwei Downloads
   --thumb                    Vorschaubild (.jpg) neben das Video legen
   --meta                     Metadaten (.json) neben das Video legen
@@ -67,7 +68,7 @@ Options:
 Umgebung: ORANGEFLIX_USER, ORANGEFLIX_PASSWORD, ORANGEFLIX_QUALITY,
           ORANGEFLIX_LAYOUT, ORANGEFLIX_SUBMODULE, ORANGEFLIX_DOWNLOADS_DIR,
           ORANGEFLIX_LIBRARY, ORANGEFLIX_CREDENTIALS_FILE, ORANGEFLIX_TOTP,
-          ORANGEFLIX_PARALLEL, ORANGEFLIX_DELAY, ORANGEFLIX_THUMB,
+          ORANGEFLIX_PARALLEL, ORANGEFLIX_LIMIT, ORANGEFLIX_DELAY, ORANGEFLIX_THUMB,
           ORANGEFLIX_META, ORANGEFLIX_CONFIG_FILE, XDG_STATE_HOME, XDG_CONFIG_HOME
 
 Konfigurationsdatei (~/.config/orangeflix-dl/config, Vorgaben wie quality=hd,
@@ -389,9 +390,10 @@ func buildApp(opts *config.Options, logs *logRouter, state *store.Store, layout 
 		Logf:     logs.Logf,
 	}
 	downloader := &download.Downloader{
-		HTTP: &http.Client{Transport: transport},
-		UA:   orangeflix.DefaultUA,
-		Logf: logs.Logf,
+		HTTP:  &http.Client{Transport: transport},
+		UA:    orangeflix.DefaultUA,
+		Logf:  logs.Logf,
+		Limit: int64(opts.Limit) * 1024,
 	}
 	manager := &download.Manager{
 		DownloadsDir: opts.DownloadsDir,

@@ -177,15 +177,21 @@ func (s *Session) send(event Event) {
 	}
 	select {
 	case s.events <- event:
+		return
 	default:
-		select {
-		case <-s.events:
-		default:
-		}
-		select {
-		case s.events <- event:
-		case <-s.done:
-		}
+	}
+	// A status can be missed. A message takes the place of the oldest
+	// event, so a full queue does not swallow the chat.
+	if event.Kind != EventMessage {
+		return
+	}
+	select {
+	case <-s.events:
+	default:
+	}
+	select {
+	case s.events <- event:
+	case <-s.done:
 	}
 }
 

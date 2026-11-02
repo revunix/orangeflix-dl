@@ -111,6 +111,7 @@ func runLibraryCheck(ctx context.Context, opts *config.Options, stdout, stderr i
 	}
 	failed := false
 	total := 0
+	var found []string
 	for _, result := range results {
 		if result.Err != nil {
 			failed = true
@@ -120,9 +121,13 @@ func runLibraryCheck(ctx context.Context, opts *config.Options, stdout, stderr i
 		total += len(result.New)
 		for _, episode := range result.New {
 			fmt.Fprintf(stdout, "%s: %d - %s\n", result.Entry.Slug, episode.Number, episode.Title)
+			found = append(found, fmt.Sprintf("%s: %s", result.Entry.Slug, episode.Title))
 		}
 	}
 	fmt.Fprintf(stdout, "%d neue Folge(n)\n", total)
+	if total > 0 {
+		notifyNewEpisodes(found)
+	}
 	if failed {
 		return 1
 	}

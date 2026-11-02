@@ -16,6 +16,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -62,8 +63,14 @@ type Downloader struct {
 	StallTimeout time.Duration
 	// Attempts overrides the default number of tries.
 	Attempts int
+	// Limit is the shared speed cap in bytes per second. Zero means no cap.
+	// Parallel downloads share it.
+	Limit int64
 	// Sleep is injectable for the tests.
 	Sleep func(context.Context, time.Duration)
+
+	paceMu   sync.Mutex
+	paceNext time.Time
 
 	Logf func(format string, args ...any)
 }
@@ -284,12 +291,15 @@ func (d *Downloader) attempt(parent context.Context, rawURL, target string, cred
 	for {
 		read, readErr := resp.Body.Read(buffer)
 		if read > 0 {
-			watchdog.Reset(stall)
 			if _, err := writer.Write(buffer[:read]); err != nil {
 				file.Close()
 				return Result{}, err
 			}
 			written += int64(read)
+			// The wait of the speed cap is not a stall: the watchdog is
+			// reset afterwards, and it follows the caller's context.
+			d.pace(parent, int64(read))
+			watchdog.Reset(stall)
 			if progress != nil && time.Since(lastReport) >= progressInterval {
 				lastReport = time.Now()
 				progress(written, total)
@@ -330,6 +340,25 @@ func (d *Downloader) attempt(parent context.Context, rawURL, target string, cred
 		return Result{}, err
 	}
 	return Result{Path: target, Size: written, MD5: checksum}, nil
+}
+
+// pace waits so the shared speed cap is kept. The wait is measured across
+// every download that uses this downloader.
+func (d *Downloader) pace(ctx context.Context, n int64) {
+	if d == nil || d.Limit <= 0 || n <= 0 {
+		return
+	}
+	d.paceMu.Lock()
+	now := time.Now()
+	if d.paceNext.Before(now) {
+		d.paceNext = now
+	}
+	d.paceNext = d.paceNext.Add(time.Duration(n) * time.Second / time.Duration(d.Limit))
+	wait := time.Until(d.paceNext)
+	d.paceMu.Unlock()
+	if wait > 0 {
+		d.sleep(ctx, wait)
+	}
 }
 
 // hashFile feeds the content of the file into the hash.

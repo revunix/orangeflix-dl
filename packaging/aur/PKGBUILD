@@ -1,0 +1,18 @@
+# Maintainer: revunix <https://github.com/revunix/orangeflix-dl>
+pkgname=orangeflix-dl-bin
+pkgver=1.1.2
+pkgrel=1
+pkgdesc='Hilfswerkzeug zur lokalen Archivierung der Orangeflix-Folgen'
+arch=('x86_64' 'aarch64')
+url='https://github.com/revunix/orangeflix-dl'
+license=('MIT')
+provides=('orangeflix-dl')
+conflicts=('orangeflix-dl')
+source_x86_64=('https://github.com/revunix/orangeflix-dl/releases/download/v1.1.2/orangeflix-dl_v1.1.2_linux_amd64.tar.gz')
+source_aarch64=('https://github.com/revunix/orangeflix-dl/releases/download/v1.1.2/orangeflix-dl_v1.1.2_linux_arm64.tar.gz')
+sha256sums_x86_64=('e1681c292f7fc05dd1c2b093a99690ac734dc980de615910a0a83b0eb1dacb97')
+sha256sums_aarch64=('7b358a2b0f8d914de1186e16987ea37887d96d8bb7aba09b3cb9d5905e0c5d82')
+
+package() {
+  install -Dm755 orangeflix-dl "$pkgdir/usr/bin/orangeflix-dl"
+}

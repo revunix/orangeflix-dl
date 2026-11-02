@@ -20,6 +20,7 @@ type FileConfig struct {
 	Submodule    int
 	Parallel     int
 	Delay        float64
+	Limit        int
 	Thumb, Meta  bool
 	DownloadsDir string
 }
@@ -83,6 +84,12 @@ func LoadConfigFile(path string, stderr io.Writer) FileConfig {
 			if result.Parallel == 0 {
 				if parsed, err := strconv.Atoi(value); err == nil {
 					result.Parallel = parsed
+				}
+			}
+		case "limit", "ORANGEFLIX_LIMIT":
+			if result.Limit == 0 {
+				if parsed, err := strconv.Atoi(value); err == nil {
+					result.Limit = parsed
 				}
 			}
 		case "delay", "ORANGEFLIX_DELAY":

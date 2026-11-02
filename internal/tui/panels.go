@@ -1228,12 +1228,20 @@ func (m *Model) chatPanel(box rect) []string {
 		start = 0
 	}
 	content = append(content, lines[start:end]...)
-	if m.live == nil || !m.live.IsLive {
-		content = append(content, theme.Muted.Render("Chat gibt es nur bei Livesendungen."))
+	liveChat := m.live != nil && m.live.IsLive && (m.live.Show == nil || m.live.Show.Chat)
+	replayChat := m.live != nil && m.live.Replay != nil && m.live.Replay.ClipID != ""
+	if !liveChat && !replayChat {
+		hint := "Chat gibt es nur bei Livesendungen."
+		if m.live != nil && m.live.IsLive {
+			hint = "Für diese Sendung ist kein Chat eingeschaltet."
+		}
+		content = append(content, theme.Muted.Render(hint))
 		return renderBoxAt(box.width, box.height, "Live-Chat", theme.BoxList, trimContent(content, box.innerHeight()))
 	}
-	if m.live.Show != nil && !m.live.Show.Chat {
-		content = append(content, theme.Muted.Render("Für diese Sendung ist kein Chat eingeschaltet."))
+	if !liveChat {
+		if m.chatStatus != "" {
+			content = append(content, theme.Muted.Render(truncateColumn(m.chatStatus, width)))
+		}
 		return renderBoxAt(box.width, box.height, "Live-Chat", theme.BoxList, trimContent(content, box.innerHeight()))
 	}
 	if !m.chatConnected && m.chatStatus != "" {

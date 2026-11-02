@@ -74,6 +74,9 @@ Alle Folgen des Formats laden.
 .BR --parallel " " \fIn\fP
 Bis zu \fIn\fP Downloads gleichzeitig (1 bis 8).
 .TP
+.BR --limit " " \fIKiB/s\fP
+Obergrenze der Downloadgeschwindigkeit. Parallele Downloads teilen sie sich.
+.TP
 .BR --delay " " \fIsekunden\fP
 Pause zwischen zwei Downloads.
 .TP
@@ -133,7 +136,7 @@ Ein TOTP-Code; wird nur einmal gelesen.
 .BR ORANGEFLIX_QUALITY ", " ORANGEFLIX_LAYOUT ", " ORANGEFLIX_SUBMODULE
 Vorgaben für die Dateien und die Feed-Variante.
 .TP
-.BR ORANGEFLIX_PARALLEL ", " ORANGEFLIX_DELAY ", " ORANGEFLIX_THUMB ", " ORANGEFLIX_META
+.BR ORANGEFLIX_PARALLEL ", " ORANGEFLIX_LIMIT ", " ORANGEFLIX_DELAY ", " ORANGEFLIX_THUMB ", " ORANGEFLIX_META
 Vorgaben für das Verhalten der Downloads.
 .TP
 .BR ORANGEFLIX_DOWNLOADS_DIR ", " ORANGEFLIX_LIBRARY ", " ORANGEFLIX_CREDENTIALS_FILE ", " ORANGEFLIX_CONFIG_FILE

@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/revunix/orangeflix-dl/internal/config"
 	"github.com/revunix/orangeflix-dl/internal/secret"
@@ -137,24 +138,32 @@ func TestRunUsesTheStoredCredentials(t *testing.T) {
 // emptyStore is a store without any data.
 type emptyStore struct{}
 
-func (emptyStore) Get() (string, error)      { return "", secret.ErrNotFound }
-func (emptyStore) Set(string) error          { return nil }
-func (emptyStore) Clear() error              { return nil }
-func (emptyStore) Backend() string           { return "leer" }
-func (emptyStore) GetToken() (string, error) { return "", secret.ErrNotFound }
-func (emptyStore) SetToken(string) error     { return nil }
-func (emptyStore) ClearToken() error         { return nil }
+func (emptyStore) Get() (string, error)          { return "", secret.ErrNotFound }
+func (emptyStore) Set(string) error              { return nil }
+func (emptyStore) Clear() error                  { return nil }
+func (emptyStore) Backend() string               { return "leer" }
+func (emptyStore) GetToken() (string, error)     { return "", secret.ErrNotFound }
+func (emptyStore) SetToken(string) error         { return nil }
+func (emptyStore) ClearToken() error             { return nil }
+func (emptyStore) GetRefresh() (string, error)   { return "", secret.ErrNotFound }
+func (emptyStore) SetRefresh(string) error       { return nil }
+func (emptyStore) GetExpiry() (time.Time, error) { return time.Time{}, secret.ErrNotFound }
+func (emptyStore) SetExpiry(time.Time) error     { return nil }
 
 // storedStore holds a password.
 type storedStore struct{}
 
-func (storedStore) Get() (string, error)      { return "secret", nil }
-func (storedStore) Set(string) error          { return nil }
-func (storedStore) Clear() error              { return nil }
-func (storedStore) Backend() string           { return "leer" }
-func (storedStore) GetToken() (string, error) { return "", secret.ErrNotFound }
-func (storedStore) SetToken(string) error     { return nil }
-func (storedStore) ClearToken() error         { return nil }
+func (storedStore) Get() (string, error)          { return "secret", nil }
+func (storedStore) Set(string) error              { return nil }
+func (storedStore) Clear() error                  { return nil }
+func (storedStore) Backend() string               { return "leer" }
+func (storedStore) GetToken() (string, error)     { return "", secret.ErrNotFound }
+func (storedStore) SetToken(string) error         { return nil }
+func (storedStore) ClearToken() error             { return nil }
+func (storedStore) GetRefresh() (string, error)   { return "", secret.ErrNotFound }
+func (storedStore) SetRefresh(string) error       { return nil }
+func (storedStore) GetExpiry() (time.Time, error) { return time.Time{}, secret.ErrNotFound }
+func (storedStore) SetExpiry(time.Time) error     { return nil }
 
 func TestStoredDownloadsDirIsUsed(t *testing.T) {
 	dir := t.TempDir()

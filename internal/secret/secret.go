@@ -7,10 +7,13 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/zalando/go-keyring"
 )
@@ -31,6 +34,15 @@ type Store interface {
 	SetToken(token string) error
 	// ClearToken removes the stored access token.
 	ClearToken() error
+	// GetRefresh returns the stored refresh token.
+	GetRefresh() (string, error)
+	// SetRefresh stores the refresh token. An empty token removes it.
+	SetRefresh(token string) error
+	// GetExpiry returns the time the access token runs out.
+	GetExpiry() (time.Time, error)
+	// SetExpiry stores the time the access token runs out. The zero time
+	// removes it.
+	SetExpiry(expiry time.Time) error
 }
 
 const (
@@ -38,6 +50,10 @@ const (
 	keyringUser    = "password"
 	// keyringToken holds the access token of the API.
 	keyringToken = "access-token"
+	// keyringRefresh holds the refresh token of the API.
+	keyringRefresh = "refresh-token"
+	// keyringExpiry holds the unix time the access token runs out.
+	keyringExpiry = "access-expires"
 )
 
 // Open returns a keychain-backed store when the platform keychain answers, and
@@ -76,9 +92,7 @@ func (k *Keychain) Get() (string, error) {
 
 // Set stores the password.
 func (k *Keychain) Set(password string) error {
-	keychainWrite.Lock()
-	defer keychainWrite.Unlock()
-	return keyring.Set(keyringService, keyringUser, password)
+	return setKeychain(keyringUser, password)
 }
 
 // Clear removes the password.
@@ -107,24 +121,85 @@ func (k *Keychain) GetToken() (string, error) {
 
 // SetToken stores the access token.
 func (k *Keychain) SetToken(token string) error {
-	// Several parts of the program ask for the token at the same time, and
-	// every call used to write it again. Two concurrent updates of the same
-	// item make the macOS keychain answer "item already exists" (exit 45), so
-	// the writes are serialised and skipped when nothing changed.
+	return setKeychain(keyringToken, token)
+}
+
+// GetRefresh returns the stored refresh token.
+func (k *Keychain) GetRefresh() (string, error) {
+	return getKeychain(keyringRefresh)
+}
+
+// SetRefresh stores the refresh token. An empty token removes it.
+func (k *Keychain) SetRefresh(token string) error {
+	return setKeychain(keyringRefresh, token)
+}
+
+// GetExpiry returns the time the access token runs out.
+func (k *Keychain) GetExpiry() (time.Time, error) {
+	value, err := getKeychain(keyringExpiry)
+	if err != nil {
+		return time.Time{}, err
+	}
+	return parseExpiry(value)
+}
+
+// SetExpiry stores the time the access token runs out.
+func (k *Keychain) SetExpiry(expiry time.Time) error {
+	if expiry.IsZero() {
+		return setKeychain(keyringExpiry, "")
+	}
+	return setKeychain(keyringExpiry, strconv.FormatInt(expiry.Unix(), 10))
+}
+
+// getKeychain reads one item.
+func getKeychain(account string) (string, error) {
+	value, err := keyring.Get(keyringService, account)
+	if err != nil {
+		if errors.Is(err, keyring.ErrNotFound) {
+			return "", ErrNotFound
+		}
+		return "", explainKeychain(err)
+	}
+	return value, nil
+}
+
+// setKeychain writes one item. The writes are serialised, an unchanged value
+// is skipped, and a stale item that cannot be updated is replaced. An empty
+// value removes the item. Two concurrent updates of the same item make the
+// macOS keychain answer "item already exists" (exit 45).
+func setKeychain(account, value string) error {
 	keychainWrite.Lock()
 	defer keychainWrite.Unlock()
-	if current, err := keyring.Get(keyringService, keyringToken); err == nil && current == token {
+	if value == "" {
+		err := keyring.Delete(keyringService, account)
+		if errors.Is(err, keyring.ErrNotFound) {
+			return nil
+		}
+		return explainKeychain(err)
+	}
+	if current, err := keyring.Get(keyringService, account); err == nil && current == value {
 		return nil
 	}
-	err := keyring.Set(keyringService, keyringToken, token)
+	err := keyring.Set(keyringService, account, value)
 	if err == nil {
 		return nil
 	}
-	// A stale item that the update cannot take over is replaced.
-	if deleteErr := keyring.Delete(keyringService, keyringToken); deleteErr != nil && !errors.Is(deleteErr, keyring.ErrNotFound) {
-		return err
+	if deleteErr := keyring.Delete(keyringService, account); deleteErr != nil && !errors.Is(deleteErr, keyring.ErrNotFound) {
+		return explainKeychain(err)
 	}
-	return keyring.Set(keyringService, keyringToken, token)
+	return explainKeychain(keyring.Set(keyringService, account, value))
+}
+
+// explainKeychain names the keychain error "item already exists".
+func explainKeychain(err error) error {
+	if err == nil {
+		return nil
+	}
+	var exit *exec.ExitError
+	if errors.As(err, &exit) && exit.ExitCode() == 45 {
+		return fmt.Errorf("der Eintrag im Schlüsselbund existiert schon (exit 45): %w", err)
+	}
+	return err
 }
 
 // ClearToken removes the stored access token.
@@ -147,6 +222,12 @@ var passwordKeys = []string{"password", "ORANGEFLIX_PASSWORD"}
 
 // tokenKeys name the line of the access token.
 var tokenKeys = []string{"access-token"}
+
+// refreshKeys name the line of the refresh token.
+var refreshKeys = []string{"refresh-token"}
+
+// expiryKeys name the line with the unix time the access token runs out.
+var expiryKeys = []string{"access-expires"}
 
 // Get reads the password from the credentials file.
 func (f *File) Get() (string, error) { return f.read(passwordKeys) }
@@ -172,6 +253,43 @@ func (f *File) SetToken(token string) error {
 
 // ClearToken removes the stored access token.
 func (f *File) ClearToken() error { return f.write(tokenKeys, "") }
+
+// GetRefresh returns the stored refresh token.
+func (f *File) GetRefresh() (string, error) { return f.read(refreshKeys) }
+
+// SetRefresh stores the refresh token. An empty token removes it.
+func (f *File) SetRefresh(token string) error {
+	if token == "" {
+		return f.write(refreshKeys, "")
+	}
+	return f.write(refreshKeys, refreshKeys[0]+"="+token)
+}
+
+// GetExpiry returns the time the access token runs out.
+func (f *File) GetExpiry() (time.Time, error) {
+	value, err := f.read(expiryKeys)
+	if err != nil {
+		return time.Time{}, err
+	}
+	return parseExpiry(value)
+}
+
+// SetExpiry stores the time the access token runs out.
+func (f *File) SetExpiry(expiry time.Time) error {
+	if expiry.IsZero() {
+		return f.write(expiryKeys, "")
+	}
+	return f.write(expiryKeys, expiryKeys[0]+"="+strconv.FormatInt(expiry.Unix(), 10))
+}
+
+// parseExpiry reads a unix time.
+func parseExpiry(value string) (time.Time, error) {
+	seconds, err := strconv.ParseInt(strings.TrimSpace(value), 10, 64)
+	if err != nil || seconds <= 0 {
+		return time.Time{}, ErrNotFound
+	}
+	return time.Unix(seconds, 0), nil
+}
 
 // lines returns the lines of the credentials file without line endings, nil
 // when the file does not exist.

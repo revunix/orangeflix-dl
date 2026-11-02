@@ -186,9 +186,23 @@ func (a *App) SetCredentials(user, password string) {
 		// ohne sie holte er den Token wieder für das alte Konto.
 		a.V3.Client.Username = user
 		a.V3.Client.Password = password
-		a.V3.Client.AccessToken = ""
-		a.V3.Client.RefreshToken = ""
-		a.V3.Client.ExpiresAt = time.Time{}
+		a.V3.Client.SetToken("", "", time.Time{})
+		a.dropSession()
+	}
+}
+
+// dropSession removes the stored session of the previous account.
+func (a *App) dropSession() {
+	store := a.V3.TokenStore
+	if store == nil {
+		return
+	}
+	_ = store.SetToken("")
+	if session, ok := store.(refreshStore); ok {
+		_ = session.SetRefresh("")
+	}
+	if session, ok := store.(expiryStore); ok {
+		_ = session.SetExpiry(time.Time{})
 	}
 }
 

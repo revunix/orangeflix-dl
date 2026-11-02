@@ -1,0 +1,22 @@
+# yaml-language-server: $schema=https://aka.ms/winget-manifest.installer.1.6.0.schema.json
+PackageIdentifier: Revunix.OrangeflixDl
+PackageVersion: 1.1.2
+Installers:
+  - Architecture: x64
+    InstallerType: zip
+    InstallerUrl: https://github.com/revunix/orangeflix-dl/releases/download/v1.1.2/orangeflix-dl_v1.1.2_windows_amd64.zip
+    InstallerSha256: e8b964e49151564ceebe4c01022ad3a71a5e28db67d14ddad12a52afd5374110
+    NestedInstallerType: portable
+    NestedInstallerFiles:
+      - RelativeFilePath: orangeflix-dl.exe
+        PortableCommandAlias: orangeflix-dl
+  - Architecture: arm64
+    InstallerType: zip
+    InstallerUrl: https://github.com/revunix/orangeflix-dl/releases/download/v1.1.2/orangeflix-dl_v1.1.2_windows_arm64.zip
+    InstallerSha256: b0390909fda48e5f4394476ebc2a8c46b3a1637402ef5938d07abc80ea138863
+    NestedInstallerType: portable
+    NestedInstallerFiles:
+      - RelativeFilePath: orangeflix-dl.exe
+        PortableCommandAlias: orangeflix-dl
+ManifestType: installer
+ManifestVersion: 1.6.0

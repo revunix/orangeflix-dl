@@ -1,0 +1,10 @@
+# yaml-language-server: $schema=https://aka.ms/winget-manifest.defaultLocale.1.6.0.schema.json
+PackageIdentifier: Revunix.OrangeflixDl
+PackageVersion: 1.1.2
+PackageLocale: en-US
+Publisher: revunix
+PackageName: orangeflix-dl
+License: MIT
+ShortDescription: Hilfswerkzeug zur lokalen Archivierung der Orangeflix-Folgen
+ManifestType: defaultLocale
+ManifestVersion: 1.6.0
